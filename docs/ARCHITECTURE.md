@@ -1,0 +1,117 @@
+# Architecture
+
+## Layout
+
+```text
+origami-tools-live/
+  index.html                 landing page (cards + thumbnails in assets/thumbnails/)
+  common/
+    common.js                shared helpers, one global: OT
+    common.css               shared styles (backlink, tooltip, select, folding)
+    page-sizes.txt           sheet presets: "name, width, height" per line
+    canvas-texture.svg       tile for the canvas background (svg#cv in common.css)
+  mirror-pleats/
+    linear.html, radial.html set window.MODE, load common + core.js
+    core.js, core.css        the whole engine (both modes)
+  x-span/index.html          single file (HTML + CSS + script)
+  hypar/index.html           single file
+  wave/index.html            single file; no dragging, fully parametric (s, j, edge bend, anchor)
+  docs/                      this folder
+```
+
+No build step, no package manager. Every page is
+plain HTML that opens from disk or from any static server (Live Server, GitHub
+Pages). Anything that must `fetch` a file (`page-sizes.txt`) degrades to a
+built-in default when opened from `file://`.
+
+## `common/common.js` — the `OT` API
+
+A classic script (not a module) so it works from `file://`; loaded in each
+tool's `<head>`, before the tool's own script.
+
+| Area | API | Notes |
+|---|---|---|
+| Tooltips | `data-tip="…"` on any element | One floating `<div>` on `<body>`; text read at hover time, so a tool can change a tip by setting `el.dataset.tip` (mirror-pleats/x-span do this per mode). Legends / h2 with a tip get a ⓘ via CSS. |
+| Folding sections | automatic | A delegated click on `aside fieldset > legend` or `.sidebar > h2` toggles `ot-shut` (a fieldset hides everything but its legend; an h2 hides its siblings up to the next h2 via `ot-folded`). On `load`, headings get `tabindex` and the folded set is restored from `localStorage['ot-shut:' + pathname]`, keyed by heading text. Sidebars with ≥ 3 headings get an `.ot-foldall` bar (Expand all / Collapse all) inserted before the first section. |
+| Export | `OT.stamp()` → `YYYY_MMDD_HHMMSS` · `OT.download(blob, name)` · `OT.svgToPng(svg, wmm, hmm, ppm)` → Promise<Blob> · `OT.jszip()` (lazy-loads JSZip from cdnjs) · `OT.wireExport({ base, svg(bg), size() })` | `wireExport` binds `#xSvg`, `#xPng`, `#xZip`; PNG density from `#ppm`. The ZIP's two files share one stamp. |
+| Sheet presets | `OT.pageSizes` (Promise of `[name, w, h][]`) · `OT.wireSheet({ get(), set(w, h) })` → `sync()` | Binds `#pgSel` + `#pgSwap`. `sync()` reselects the matching preset (either orientation) or "Custom"; tools call it from `syncUI()`. |
+| Grid | `OT.gridFieldset(polar)` → HTML · `OT.gridCfg()` · `OT.wireGrid(render)` · `OT.gridSVG(pageBox, origin, polar)` | `gridSVG` also records `OT._grid = { origin, polar }` for snapping; clipped to the page with a `<clipPath>`. |
+| Snapping | `OT.snapping(e)` · `OT.snapOnLine(p, A, d, o)` → s · `OT.snap2D(p, o)` → [x, y] · `OT.snapDir(C, p, tol)` → degrees · `OT.snap1D(v, values, tol)` · `OT.gridLines(axis, v)` · `OT.snapMark(px)` · `OT.SNAP_DEG` | `o = { tol, points, anchors, grid }`. See [MATH.md § Snapping](MATH.md#5-snapping). `OT.lastSnap` holds the snapped point for the orange marker. |
+
+| Margins | `OT.marginRow()` → HTML · `OT.wireMargins({ get() → [mx, my, lock], set(mx, my, lock), page() → [PW, PH], polar, note(msg) })` → `sync()` · `OT.gridMargins(L, step)` · `OT.snapMargin(L, d, tol)` · `OT.marginInfo(PW, PH, mx, my)` | Binds `#margX`, `#margY`, `#margLock`, `#margFit`. Dragging the edges is per tool (coordinates differ); see MATH § 4b. |
+| Projects | `OT.projectFieldset()` → HTML · `OT.wireProject({ tool, version, base, templates, get(), set(state, doc) })` → `doc()` · `OT.parseProject(text)` · `OT.embedProject(svg, doc)` · `OT.gridState()` / `OT.setGridState(g)` | File = `{ format, tool, version, savedAt, grid, state }`. `tool` must match the page (`mirror-pleats-linear` ≠ `-radial`). Pass `project: doc` to `wireExport` to embed it in SVGs. Templates: an index file of `label, file.json` lines. |
+
+`OT.PAGE_DEFAULTS` mirrors the first lines of `page-sizes.txt` — keep them in step.
+
+## Tool anatomy (mirror-pleats, x-span, hypar, wave share this shape)
+
+```text
+S   = model state (plain JSON-able object)      UI = view state (mode, selection, drag, toggles)
+snap() / restore() / pushUndo() / act(fn)       80-step undo of JSON snapshots of S
+compute…()                                      geometry from S (pure)
+render()                                        rebuilds the whole <svg id="cv"> innerHTML each time
+updateStatus()                                  one-line hint + analysis under the canvas
+syncUI()                                        S → sidebar fields (never overwrites the focused field)
+pointerdown / pointermove / endDrag             hit-test → drag → mutate S → render
+buildSVG(bg)                                    export string, true mm, page-sized
+```
+
+- **Full re-render** on every change: the drawings are small (hundreds of
+  lines), so rebuilding SVG markup is simpler and fast enough.
+- **`vector-effect="non-scaling-stroke"`** on screen, so on-screen line widths
+  are in screen px regardless of zoom; export uses the mm stroke from `#sw`.
+- **Coordinates are mm.** In mirror-pleats and x-span the origin is the
+  top-left of the **area inside the margins** (`S.W × S.H`); the page is
+  `(−mx, −my)` to `(W + mx, H + my)`. Hypar keeps page coordinates (origin at
+  the page corner) and crops against `[mx, W−mx] × [my, H−my]`.
+- **Margin drags move the origin**, so mirror-pleats / x-span hold the view
+  still in *page* coordinates while dragging (`UI.viewLockPage`, re-offset by
+  the current margins in `bounds()`).
+- **`UI.snap`** is set on every pointer event from `OT.snapping(e)` (checkbox
+  on and Alt not held); the tool's snap helpers read it.
+
+### mirror-pleats state
+
+```js
+S = { W, H, mx, my, mLock,     // area inside the margins; margins ↔ ↕; lock
+      verts: [...],            // line mode: {xt, xb} (x at y=0 and y=H) · ray mode: {a} (degrees)
+      hors: [{k, a, b}],       // line between vertical k and nx(k); a, b = fraction of H (lines) or mm from centre (rays)
+      layout, centre, cap, enforce, rays, kaw, minGap, gen }
+```
+
+`RAYS()`, `nx(k)`, `vp(v, t)`, `reflectPt`, `rayVert`, `vSeg`, `visT`,
+`vView`, `byAlong` hide the line/ray difference; everything above them
+(trail, handles, snapping, layouts, measuring) is shared. `syncRayMode()` is
+the only place that switches representation.
+
+### x-span / hypar / wave
+
+- x-span: `S.xs` (vertical x's), rhombus definition, per-row height ratios,
+  y offset — see [x-span README § The lattice](../x-span/README.md#the-lattice).
+- hypar: `S.pts` polygon (+ regular params `n, R, rot, c`), offset width,
+  centre cut, sheet `W, H, m`.
+- wave (Wave Generator): `S.s, S.jCustom, S.j, S.edge, S.anchor` plus the sheet/margins.
+  Page coordinates like hypar. The margins are nominal: `axis(P, m)` picks
+  the whole-gap boundary nearest the nominal margin (≥ 5 mm left) and returns
+  the material span plus the fold positions along either axis (x from the
+  left, y from the bottom), so both directions share the same sequence and
+  the cut outline (`M.rect`) fits the pattern exactly.
+  See [wave README](../wave/README.md).
+
+## Export
+
+- Mirror-pleats / x-span / hypar: `buildSVG` emits a document the size of the
+  **page** (`width="…mm"`), viewBox offset so the margin rectangle sits in
+  place, margin outline in the cut colour, pattern lines in the line/fold
+  colour. PNG = the same SVG rasterised on a white background.
+- Wave: the same page-sized document, but the cut outline is the fitted
+  rectangle `M.rect` (whole gaps of the pattern), not the nominal margin
+  rectangle, which is drawn on screen only.
+
+## Testing
+
+No test harness for these tools. Changes were checked
+with throw-away Playwright scripts: load every page, click every sidebar
+button/checkbox, drag across the canvas, fail on any console/page error;
+plus targeted checks (angle snapping lands on 30°/45°/22.5°, Alt bypasses it,
+ray-mode Kawasaki status, exported file names and ZIP contents).

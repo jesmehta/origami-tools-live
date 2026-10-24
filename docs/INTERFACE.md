@@ -1,0 +1,99 @@
+# Interface conventions
+
+What a user can expect to work the same way in every tool.
+
+## Page layout
+
+- **Sidebar left, canvas right, status bar under the canvas.**
+- Top of the sidebar: **Origami tools** backlink (an outlined arrow-shaped button), tool title.
+- Sidebar order: **Sheet → Grid & snap → tool controls → Edit mode →
+  layouts → Dimensions → Export → Undo/Redo.**
+- **Every sidebar section folds**: click its heading (▾ / ▸; Enter or Space
+  when focused). Meant for set-once sections like Sheet and Grid & snap.
+  **Expand all / Collapse all** sit above the first section of any sidebar
+  with three or more sections.
+  Which sections are folded is remembered per page in the browser (not in
+  project files).
+- **Colours** (palette, 2026-09-26): sage-green canvas background with a faint
+  random-dash texture; cream sidebar, status bar and on-screen paper; pale
+  yellow buttons; deep green for text and the selected mode; **rust** for
+  tool titles, links, section arrows, ⓘ, handles and the ◆ centre; amber for
+  the snap ring and measure marks. **Fold lines stay green and cut lines
+  black**; the **margin rectangle** is the dark cut line. The paper's
+  outline is sage (screen only).
+
+## Tooltips instead of paragraphs
+
+- Explanations live in hover tooltips (`data-tip`), not in the sidebar.
+- A section heading with an explanation shows **ⓘ**; hover it.
+- Mode buttons carry their own how-to, which changes with the mode (for
+  example, radial Verticals says different things for lines and rays).
+- The **status bar** keeps a one-line hint for the current mode plus live
+  analysis (crossings, min vertex gap, flat-foldability, what's grey, and on
+  mirror-pleats "⚠ n pair(s) of lines out of order").
+- **Rules hold for generated layouts, warn for hand edits** — e.g. mirror-pleats
+  line order: Ordered / Randomize / Reset / Fit obey it; dragging a line may
+  break it and the status bar says so.
+
+## Sheet
+
+- **Size** preset dropdown + **⇄** (swap portrait/landscape) + W × H typed.
+  Presets come from `common/page-sizes.txt`.
+- **Margins** 5–15 mm: ↔ (left & right) and ↕ (top & bottom), each symmetric;
+  🔗 keeps them equal. The pattern is cropped at the margin line; the margin
+  outline is exported as the cut; the page outline is never exported.
+- **Fit to grid** snaps each margin line to the nearest grid line; the
+  **Margin** edit mode (mirror-pleats, x-span; in hypar the edges are always
+  draggable, marked by blue bars) lets you drag the edges, snapping to the
+  grid, with the working area shown in grid steps in the status bar.
+- Mirror-pleats / x-span: changing page or margin rescales the pattern (the
+  page stays the size you asked for). Hypar: the polygon keeps its position
+  relative to the sheet centre.
+- **Wave Generator is the exception**: its margins are nominal (dashed grey); the
+  black cut outline snaps to the nearest whole step/jump boundary, never
+  closer than 5 mm to the sheet edge, and the status bar gives the resulting
+  margins. Nothing is cropped there — the pattern fits the outline exactly.
+
+## Grid & snap
+
+- Grid is screen-only. Square: origin at the **sheet centre**, every 5th line
+  darker. Radial: **polar** around the ◆ (rings in mm, spokes in °, multiples
+  of 45° darker), moving with it.
+- **Snap** checkbox; hold **Alt** while dragging to place freely.
+- An **orange ring** shows where a drag snapped.
+- Moving a whole line, vertical or polygon snaps as soon as **any** of its
+  end handles reaches a target.
+- Snap angles: every multiple of **15°** and **22.5°**.
+
+## Handles
+
+- Squares: vertical ends / polygon corners. Circles: line ends. ◆: a centre.
+- Filled light blue = selected. **Dashed circle** = a line end that is off
+  the canvas, drawn at the nearest visible point of its line (grab it to
+  adjust, or select + Delete).
+- **Shift** momentarily swaps between the two edit modes (Lines ↔ Verticals,
+  Grid ↔ Verticals). **Esc** cancels a half-drawn line/measure.
+  **Delete/Backspace** removes the selection. **Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y**
+  undo/redo.
+
+## Project
+
+- **Save…** downloads `<tool>_<stamp>.json`; **Load…** takes a .json or an
+  .svg exported by these tools; or drop either onto the page.
+  **Templates…** appears when the tool has a `templates/` folder (server only).
+- Saved: geometry and Grid & snap settings. Not saved: colours, stroke, PNG
+  density — those stay as currently set.
+- A load is one Undo step.
+- In the sidebar just under the title.
+
+## Export
+
+- **Export SVG / Export PNG / Export ZIP** (both). Names:
+  `<tool>_YYYY_MMDD_HHMMSS.svg|png|zip`, local time; a ZIP's contents share
+  its stamp.
+- SVG is true size in mm (1:1); PNG density is set in px/mm.
+- Not exported: grid, ghosts, handles, dimensions, measurements, page outline.
+  Every exported SVG does carry the project (invisible `<metadata>`).
+- **Saving an export into the repo folder while Live Server is running
+  reloads the page and loses unsaved work**: save elsewhere, or add the
+  folder to Live Server's `liveServer.settings.ignoreFiles`.

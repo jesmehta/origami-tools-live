@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wave Generator</title>
+<link rel="stylesheet" href="../common/common.css">
+<script src="../common/common.js"></script>
+<style>
+:root{--bg:#eef0dc;--panel:#fbf9ec;--ink:#243322;--mute:#6b7556;--line:#cdd5b4;--acc:#b4532a;}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{font:13px/1.4 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+#app{display:grid;grid-template-columns:340px 1fr;height:100%}
+aside{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:12px 14px 30px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#cv{flex:1;min-height:0;width:100%;background:#d9e2c4;touch-action:none;display:block}
+#status{padding:6px 12px;border-top:1px solid var(--line);background:var(--panel);color:var(--mute);min-height:44px}
+#status .bad{color:#a8401c;font-weight:600}
+h1{font-size:15px;margin:0 0 10px}
+fieldset{border:1px solid var(--line);border-radius:6px;margin:0 0 10px;padding:8px 10px 10px}
+legend{font-weight:600;padding:0 4px}
+.row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:5px 0}
+label{display:inline-flex;align-items:center;gap:5px}
+input[type=number]{width:64px;padding:3px 4px}
+input[type=range]{width:120px}
+input[type=color]{width:30px;height:22px;padding:0;border:1px solid var(--line)}
+button{font:inherit;padding:4px 9px;border:1px solid #b9c29c;border-radius:4px;background:#f7f3dc;cursor:pointer}
+button:hover{background:#efe6bd}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.note{color:var(--mute);font-size:12px;margin:4px 0 0}
+@media(max-width:780px){#app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}aside{max-height:48vh}main{height:70vh}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside>
+  <a class="ot-back" href="../index.html">Origami tools</a>
+  <h1>Wave Generator</h1>
+  <div id="projSlot"></div>
+
+  <fieldset><legend>Sheet</legend>
+    <div class="row">
+      <label>Size <select id="pgSel"></select></label>
+      <button id="pgSwap" data-tip="Swap portrait / landscape">⇄</button>
+    </div>
+    <div class="row">
+      <label>W <input type="number" id="W" min="10" step="1"> mm</label>
+      <label>H <input type="number" id="H" min="10" step="1"> mm</label>
+    </div>
+    <div id="margSlot"></div>
+  </fieldset>
+  <div id="gridSlot"></div>
+
+  <fieldset><legend data-tip="Fold lines in x and y, spaced step s, jump j, step s, jump j … alternately. No partial gaps: the cut outline (black) is moved in or out from the nominal margin (dashed) to the nearest whole-gap boundary, keeping at least 5 mm of margin; the status bar gives the resulting margins.">Steps</legend>
+    <div class="row">
+      <label>Step s <input type="range" id="sR" min="8" max="15" step="0.5"> <input type="number" id="sN" min="8" max="15" step="0.5"> mm</label>
+    </div>
+    <div class="row">
+      <label data-tip="Off: the jump is 2s. On: set it yourself, anywhere from s to 3s (2s ± s)."><input type="checkbox" id="jC"> Custom jump</label>
+    </div>
+    <div class="row">
+      <label>Jump j <input type="range" id="jR" step="0.5"> <input type="number" id="jN" step="0.5"> mm</label>
+    </div>
+    <div class="row">
+      <label data-tip="On: start with an extra step — s, s, j, s, j … — so a step-wide bend runs along the edge. Off: s, j, s, j …"><input type="checkbox" id="eb"> Edge bend</label>
+    </div>
+    <div class="row">
+      <span>Anchor</span>
+      <label data-tip="The sequence starts at the lower-left corner of the material and runs right and up until it reaches the material's edge."><input type="radio" name="anc" value="corner"> Corner</label>
+      <label data-tip="The sequence is centred on the material and symmetric in x and y: it starts and ends on a step s — the most steps that fit inside — with equal leftover at both ends. Edge bend adds the extra step at both ends."><input type="radio" name="anc" value="center"> Centre</label>
+    </div>
+  </fieldset>
+  <div id="viewSlot"></div>
+
+  <fieldset><legend>Export</legend>
+    <div class="row">
+      <label>Cut <input type="color" id="colCut" value="#000000"></label>
+      <label>Fold <input type="color" id="colFold" value="#2e8b57"></label>
+    </div>
+    <div class="row">
+      <label>Stroke <input type="number" id="sw" value="0.2" min="0.05" step="0.05"> mm</label>
+      <label>PNG <input type="number" id="ppm" value="6" min="1" max="30" step="1"> px/mm</label>
+    </div>
+    <div class="row">
+      <button id="xSvg" class="pri">Export SVG</button>
+      <button id="xPng" class="pri">Export PNG</button>
+      <button id="xZip" class="pri" data-tip="SVG + PNG together in one .zip (same time-stamped name).">Export ZIP</button>
+    </div>
+  </fieldset>
+
+  <div class="row"><button id="bUndo">Undo</button><button id="bRedo">Redo</button></div>
+</aside>
+<main>
+  <svg id="cv" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="status"></div>
+</main>
+</div>
+
+<script>
+'use strict';
+/* Wave generator — fold lines in x and y at alternating step / jump spacing, anchored at a corner or centred. */
+const EPS = 1e-6;
+const fmt = n => +n.toFixed(4);
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const $ = id => document.getElementById(id);
+const cv = $('cv');
+$('gridSlot').outerHTML = OT.gridFieldset(false);
+$('projSlot').outerHTML = OT.projectFieldset();
+$('margSlot').outerHTML = OT.marginRow();
+$('viewSlot').outerHTML = OT.zoomFieldset();
+
+/* ---------- state ---------- */
+const S = {
+  W: 270, H: 270,                         // the sheet (page coordinates); the material is fitted to whole gaps near the margins
+  mx: 10, my: 10, mLock: true,            // nominal margins (5–15 mm); the cut outline snaps to whole gaps nearest them
+  s: 10,                                  // step, 8–15 mm
+  jCustom: false, j: 20,                  // jump: 2s unless jCustom, then j in [s, 3s]
+  edge: false,                            // edge bend: an extra s at the start (both ends when centred)
+  anchor: 'corner',                       // 'corner' (lower-left, outward) | 'center' (symmetric)
+};
+const UI = { view: { cx: 0, cy: 0, w: 180 }, note: '' };
+
+/* ---------- undo ---------- */
+const undoS = [], redoS = [];
+const snap = () => JSON.stringify(S);
+function restore(j) { Object.assign(S, JSON.parse(j)); syncUI(); render(); }
+function pushUndo(j) { undoS.push(j || snap()); if (undoS.length > 80) undoS.shift(); redoS.length = 0; }
+function act(fn) { pushUndo(); UI.note = ''; fn(); syncUI(); render(); }
+function undo() { if (!undoS.length) return; redoS.push(snap()); restore(undoS.pop()); }
+function redo() { if (!redoS.length) return; undoS.push(snap()); restore(redoS.pop()); }
+
+/* ---------- geometry ---------- */
+const jump = () => S.jCustom ? clamp(S.j, S.s, 3 * S.s) : 2 * S.s;
+
+// No partial gaps: the material (the black cut outline) is fitted to whole gaps along each axis. The margin
+// fields are the nominal target; the outline moves in or out to the nearest gap boundary, never leaving less
+// than MIN_M mm of margin. One axis of a page P mm long with nominal margin m, measured from its start side
+// (left / bottom). Returns { a, b: material start / end, at: fold positions (absolute, strictly inside),
+// n: steps s used } — or n = 0 when not even one step fits.
+const MIN_M = 5;
+function axis(P, m) {
+  const s = S.s, j = jump(), e = S.edge ? 1 : 0, L = P - 2 * m;
+  const pick = (cands, len) => cands.filter(c => len(c) > EPS).reduce((best, c) =>
+    !best || Math.abs(len(c) - L) < Math.abs(len(best) - L) - EPS ? c : best, null);
+  if (S.anchor === 'corner') {                        // from the nominal start edge outward: [s,] s, j, s, j …
+    const bounds = []; let p = 0, n = 0;
+    for (let i = 0; ; i++) {
+      const step = (e && i === 0) || (i - e) % 2 === 0;
+      p += step ? s : j; if (step) n++;
+      if (m + p > P - MIN_M + EPS) break;
+      bounds.push({ p, n });
+    }
+    const c = pick(bounds, c => c.p);
+    if (!c) return { a: m, b: m, at: [], n: 0 };
+    return { a: m, b: m + c.p, at: bounds.filter(q => q.p < c.p - EPS).map(q => m + q.p), n: c.n };
+  }
+  // centred: [s,] s (j s)^(k-1) [, s] — the step count k whose length is nearest the nominal, placed symmetrically
+  const tot = k => (k + 2 * e) * s + (k - 1) * j, ks = [];
+  for (let k = 1; tot(k) <= P - 2 * MIN_M + EPS; k++) ks.push(k);
+  const k = pick(ks, tot);
+  if (!k) return { a: P / 2, b: P / 2, at: [], n: 0 };
+  const gaps = [];
+  if (e) gaps.push(s);
+  for (let i = 0; i < k; i++) { if (i) gaps.push(j); gaps.push(s); }
+  if (e) gaps.push(s);
+  const a = (P - tot(k)) / 2, at = [];
+  let p = a;
+  gaps.slice(0, -1).forEach(g => { p += g; at.push(p); });
+  return { a, b: a + tot(k), at, n: k + 2 * e };
+}
+
+function compute() {
+  const ax = axis(S.W, S.mx), ay = axis(S.H, S.my);
+  const x0 = ax.a, x1 = ax.b, y0 = S.H - ay.b, y1 = S.H - ay.a;   // y counted from the bottom edge up
+  const lines = [
+    ...ax.at.map(p => [[p, y0], [p, y1]]),
+    ...ay.at.map(p => [[x0, S.H - p], [x1, S.H - p]]),
+  ];
+  return { ax, ay, lines, rect: [x0, y0, x1, y1], ok: ax.n > 0 && ay.n > 0 };
+}
+
+/* ---------- view ---------- */
+function fitView() {
+  const r = cv.getBoundingClientRect(), asp = (r.width || 1) / (r.height || 1);
+  UI.view = { cx: S.W / 2, cy: S.H / 2, w: Math.max(S.W * 1.15, S.H * 1.15 * asp, 20) };
+}
+
+/* ---------- render ---------- */
+const ln = (a, b) => `<line x1="${fmt(a[0])}" y1="${fmt(a[1])}" x2="${fmt(b[0])}" y2="${fmt(b[1])}"/>`;
+const rectEl = ([x0, y0, x1, y1]) => `<rect x="${fmt(x0)}" y="${fmt(y0)}" width="${fmt(x1 - x0)}" height="${fmt(y1 - y0)}"/>`;
+const cutRect = M => M.ok ? rectEl(M.rect) : '';
+
+function render() {
+  const M = compute(), v = UI.view, r = cv.getBoundingClientRect();
+  const h = v.w * (r.height || 1) / (r.width || 1);
+  cv.setAttribute('viewBox', `${v.cx - v.w / 2} ${v.cy - h / 2} ${v.w} ${h}`);
+  const ctm = cv.getScreenCTM(), px = ctm && ctm.a ? 1 / ctm.a : 1;
+  const NS = 'vector-effect="non-scaling-stroke"';
+  let s = `<rect x="0" y="0" width="${S.W}" height="${S.H}" fill="#fffdf3" stroke="#a9b38c" stroke-width="0.5" ${NS}/>`;
+  s += OT.gridSVG([0, 0, S.W, S.H], [S.W / 2, S.H / 2], false);
+  s += `<g stroke="${$('colFold').value}" stroke-width="0.55" fill="none" stroke-linecap="round" ${NS}>${M.lines.map(l => ln(l[0], l[1])).join('')}</g>`;
+  // the nominal margin, dashed grey (screen only), then the fitted cut outline
+  s += `<g stroke="#a3a88f" stroke-width="0.5" stroke-dasharray="4 3" fill="none" ${NS}>${rectEl([S.mx, S.my, S.W - S.mx, S.H - S.my])}</g>`;
+  s += `<g stroke="${$('colCut').value}" stroke-width="0.8" fill="none" ${NS}>${cutRect(M)}</g>`;
+  if (S.anchor === 'corner') {                       // ◆ at the anchor corner (lower-left of the material)
+    const c = [M.rect[0], M.rect[3]], d = 6 * px;
+    s += `<polygon points="${c[0]},${c[1] - d} ${c[0] + d},${c[1]} ${c[0]},${c[1] + d} ${c[0] - d},${c[1]}" fill="#b4532a" stroke="#7a3316" ${NS}/>`;
+  }
+  cv.innerHTML = s;
+  updateStatus(M);
+}
+function axisInfo(name, a, P, lab) {
+  const k = a.at.length;
+  if (!a.n) return `${name}: <span class="bad">no step fits</span>`;
+  return `${name}: ${k} fold${k === 1 ? '' : 's'}, ${a.n} step${a.n === 1 ? '' : 's'}, ${fmt(a.b - a.a)} mm · margins ${lab} ${fmt(a.a)} / ${fmt(P - a.b)} mm`;
+}
+function updateStatus(M) {
+  const t = `s = ${fmt(S.s)} mm · j = ${fmt(jump())} mm · ${S.edge ? 's, s, j, s, j …' : 's, j, s, j …'} · ` +
+    (S.anchor === 'corner' ? 'from the lower-left corner (◆)' : 'centred, symmetric') + ' · wheel zooms, drag pans.';
+  let info = `<br>${axisInfo('x', M.ax, S.W, 'L/R')} · ${axisInfo('y', M.ay, S.H, 'B/T')}`;
+  if (UI.note) info += `<br><span class="bad">${UI.note}</span>`;
+  $('status').innerHTML = t + info;
+}
+
+/* ---------- sidebar sync ---------- */
+function syncUI() {
+  $('W').value = S.W; $('H').value = S.H; syncMargins(); syncSheet();
+  $('sR').value = S.s; $('sN').value = S.s;
+  const j = jump();
+  ['jR', 'jN'].forEach(id => { $(id).min = S.s; $(id).max = 3 * S.s; $(id).value = j; $(id).disabled = !S.jCustom; });
+  $('jC').checked = S.jCustom; $('eb').checked = S.edge;
+  document.querySelectorAll('input[name=anc]').forEach(r => { r.checked = r.value === S.anchor; });
+}
+
+const setS = v => act(() => { S.s = clamp(+v || S.s, 8, 15); S.j = clamp(S.j, S.s, 3 * S.s); });
+$('sR').oninput = () => setS($('sR').value);
+$('sN').onchange = () => setS($('sN').value);
+const setJ = v => act(() => { S.j = clamp(+v || S.j, S.s, 3 * S.s); });
+$('jR').oninput = () => setJ($('jR').value);
+$('jN').onchange = () => setJ($('jN').value);
+$('jC').onchange = () => act(() => { S.jCustom = $('jC').checked; if (S.jCustom) S.j = clamp(S.j, S.s, 3 * S.s); });
+$('eb').onchange = () => act(() => { S.edge = $('eb').checked; });
+document.querySelectorAll('input[name=anc]').forEach(r => r.onchange = () => act(() => { S.anchor = r.value; }));
+['W', 'H'].forEach(id => $(id).onchange = () => act(() => {
+  S.W = Math.max(10, +$('W').value || S.W); S.H = Math.max(10, +$('H').value || S.H); fitView();
+}));
+const syncMargins = OT.wireMargins({
+  get: () => [S.mx, S.my, S.mLock], set: (mx, my, lock) => act(() => { S.mx = mx; S.my = my; S.mLock = lock; }),
+  page: () => [S.W, S.H], polar: false, note: m => { UI.note = m; render(); },
+});
+const syncSheet = OT.wireSheet({ get: () => [S.W, S.H], set: (w, h) => { $('W').value = w; $('H').value = h; $('W').onchange(); } });
+['colCut', 'colFold'].forEach(id => $(id).oninput = render);
+$('bUndo').onclick = undo; $('bRedo').onclick = redo;
+addEventListener('keydown', e => {
+  if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) && !/^(checkbox|radio)$/.test(document.activeElement.type)) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+});
+addEventListener('resize', render);
+
+/* ---------- export ---------- */
+function buildSVG(bg) {
+  const M = compute(), sw = +$('sw').value || 0.2, w = S.W, h = S.H;   // the whole sheet, true size
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(w)}mm" height="${fmt(h)}mm" viewBox="0 0 ${fmt(w)} ${fmt(h)}">` +
+    (bg ? `<rect x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" fill="#fff"/>` : '') +
+    `<g id="fold" stroke="${$('colFold').value}" stroke-width="${sw}" fill="none" stroke-linecap="round">${M.lines.map(l => ln(l[0], l[1])).join('')}</g>` +
+    `<g id="cut" stroke="${$('colCut').value}" stroke-width="${sw}" fill="none">${cutRect(M)}</g></svg>`;
+}
+const tag = () => `s${fmt(S.s)}_j${fmt(jump())}${S.edge ? '_edge' : ''}_${S.anchor}`;
+OT.wireExport({ get base() { return `wave_${tag()}`; }, svg: buildSVG, size: () => [S.W, S.H], project: () => projectDoc() });
+
+/* ---------- pan / zoom (no shape dragging — the pattern is fully parametric) ---------- */
+OT.wireZoom({
+  svg: cv, pan: true,
+  get: () => { const r = cv.getBoundingClientRect(), v = UI.view, h = v.w * (r.height || 1) / (r.width || 1);
+    return { x0: v.cx - v.w / 2, y0: v.cy - h / 2, x1: v.cx + v.w / 2, y1: v.cy + h / 2 }; },
+  set: b => { UI.view = { cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, w: b.x1 - b.x0 }; },
+  fit: fitView, render,
+});
+
+/* ---------- init ---------- */
+OT.wireGrid(render);
+syncUI(); fitView(); render();
+// Project files: the model S. Missing fields fall back to the start-up defaults; a load is one undo step.
+const S0 = snap();
+const projectDoc = OT.wireProject({
+  tool: 'wave', version: 1,
+  get: () => JSON.parse(snap()),
+  set: st => act(() => { Object.assign(S, JSON.parse(S0), st); fitView(); }),
+});
+</script>
+</body>
+</html>

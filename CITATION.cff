@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use these tools, please cite them as below."
+title: "Origami Tools"
+abstract: "Browser tools for origami/folding-based design and fabrication: Mirror Pleats (linear and radial V-pleats), Hypar Generator, X Span Generator and Wave Generator, exporting true-size SVG/PNG fold patterns."
+type: software
+authors:
+  - family-names: "Mehta"
+    given-names: "Jesal"
+repository-code: "https://github.com/jesmehta/origami-tools-live"
+license: GPL-3.0-or-later
+version: "1.0.0"
+keywords:
+  - origami
+  - fold pattern
+  - crease pattern
+  - computational folding
+  - fabrication

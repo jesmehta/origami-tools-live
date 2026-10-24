@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hypar Generator</title>
+<link rel="stylesheet" href="../common/common.css">
+<script src="../common/common.js"></script>
+<style>
+:root{--bg:#eef0dc;--panel:#fbf9ec;--ink:#243322;--mute:#6b7556;--line:#cdd5b4;--acc:#b4532a;}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{font:13px/1.4 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+#app{display:grid;grid-template-columns:340px 1fr;height:100%}
+aside{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:12px 14px 30px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#cv{flex:1;min-height:0;width:100%;background:#d9e2c4;touch-action:none;display:block}
+#status{padding:6px 12px;border-top:1px solid var(--line);background:var(--panel);color:var(--mute);min-height:44px}
+#status .bad{color:#a8401c;font-weight:600}
+h1{font-size:15px;margin:0 0 10px}
+fieldset{border:1px solid var(--line);border-radius:6px;margin:0 0 10px;padding:8px 10px 10px}
+legend{font-weight:600;padding:0 4px}
+.row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:5px 0}
+label{display:inline-flex;align-items:center;gap:5px}
+input[type=number]{width:64px;padding:3px 4px}
+input[type=color]{width:30px;height:22px;padding:0;border:1px solid var(--line)}
+button{font:inherit;padding:4px 9px;border:1px solid #b9c29c;border-radius:4px;background:#f7f3dc;cursor:pointer}
+button:hover{background:#efe6bd}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.note{color:var(--mute);font-size:12px;margin:4px 0 0}
+@media(max-width:780px){#app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}aside{max-height:48vh}main{height:70vh}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside>
+  <a class="ot-back" href="../index.html">Origami tools</a>
+  <h1>Hypar Generator</h1>
+  <div id="projSlot"></div>
+
+  <fieldset><legend>Sheet</legend>
+    <div class="row">
+      <label>Size <select id="pgSel"></select></label>
+      <button id="pgSwap" data-tip="Swap portrait / landscape">⇄</button>
+    </div>
+    <div class="row">
+      <label>W <input type="number" id="W" min="10" step="1"> mm</label>
+      <label>H <input type="number" id="H" min="10" step="1"> mm</label>
+    </div>
+    <div id="margSlot"></div>
+  </fieldset>
+  <div id="gridSlot"></div>
+
+  <fieldset><legend>Polygon</legend>
+    <div class="row">
+      <label>Sides <input type="number" id="nS" min="3" max="64" step="1"></label>
+      <label>Radius <input type="number" id="rad" min="1" step="1"> mm</label>
+      <label>Rotate <input type="number" id="rot" step="1"> °</label>
+    </div>
+    <div class="row"><label data-tip="On: equal sides and angles; drag empty canvas to define one (centre → radius/rotation). Off: free corners, kept convex. Changing the side count resets to a regular shape."><input type="checkbox" id="reg"> Regular polygon</label></div>
+  </fieldset>
+
+  <fieldset><legend>Contours &amp; diagonals</legend>
+    <div class="row"><label>Offset width <input type="number" id="dw" min="0.1" step="0.5"> mm</label></div>
+    <div class="row"><label data-tip="On: the innermost contour becomes a cut line and the diagonals stop at it. Off: every contour is a fold and the diagonals run all the way in."><input type="checkbox" id="cc"> Centre cut</label></div>
+    <div class="row"><label><input type="checkbox" id="gh" checked> Show ghost lines (grey)</label></div>
+  </fieldset>
+  <div id="viewSlot"></div>
+
+  <fieldset><legend>Export</legend>
+    <div class="row">
+      <label>Cut <input type="color" id="colCut" value="#000000"></label>
+      <label>Fold <input type="color" id="colFold" value="#2e8b57"></label>
+    </div>
+    <div class="row">
+      <label>Stroke <input type="number" id="sw" value="0.2" min="0.05" step="0.05"> mm</label>
+      <label>PNG <input type="number" id="ppm" value="6" min="1" max="30" step="1"> px/mm</label>
+    </div>
+    <div class="row">
+      <button id="xSvg" class="pri">Export SVG</button>
+      <button id="xPng" class="pri">Export PNG</button>
+      <button id="xZip" class="pri" data-tip="SVG + PNG together in one .zip (same time-stamped name).">Export ZIP</button>
+    </div>
+  </fieldset>
+
+  <div class="row"><button id="bUndo">Undo</button><button id="bRedo">Redo</button></div>
+</aside>
+<main>
+  <svg id="cv" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="status"></div>
+</main>
+</div>
+
+<script>
+'use strict';
+/* Hypar generator — concentric inward offsets + corner bisectors of a convex polygon. */
+const DEG = Math.PI / 180;
+const MAXC = 400;                       // contour cap
+const AREA_EPS = 1e-4;                  // mm² — a contour smaller than this is treated as collapsed
+const fmt = n => +n.toFixed(4);
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const $ = id => document.getElementById(id);
+const cv = $('cv');
+$('gridSlot').outerHTML = OT.gridFieldset(false);
+$('projSlot').outerHTML = OT.projectFieldset();
+$('margSlot').outerHTML = OT.marginRow();
+$('viewSlot').outerHTML = OT.zoomFieldset();
+
+/* ---------- state ---------- */
+const S = {
+  W: 270, H: 270,                         // the sheet (page coordinates); the polygon sits on it, cropped at the margins
+  mx: 10, my: 10, mLock: true,            // margins: left & right, top & bottom (5–15 mm); mLock keeps them equal
+  n: 6, R: 60, rot: -90, c: { x: 135, y: 135 },
+  regular: true, pts: [],
+  d: 3, centreCut: false,
+};
+const UI = { view: { cx: 0, cy: 0, w: 180 }, drag: null, note: '', ghost: true };
+
+/* ---------- undo ---------- */
+const undoS = [], redoS = [];
+const snap = () => JSON.stringify(S);
+function restore(j) { Object.assign(S, JSON.parse(j)); syncUI(); render(); }
+function pushUndo(j) { undoS.push(j || snap()); if (undoS.length > 80) undoS.shift(); redoS.length = 0; }
+function act(fn) { pushUndo(); UI.note = ''; fn(); syncUI(); render(); }
+function undo() { if (!undoS.length) return; redoS.push(snap()); restore(undoS.pop()); }
+function redo() { if (!redoS.length) return; undoS.push(snap()); restore(redoS.pop()); }
+
+/* ---------- geometry ---------- */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+const crs = (a, b) => a[0] * b[1] - a[1] * b[0];
+const unit = a => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };
+
+function signedArea(p) {
+  let s = 0;
+  for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; }
+  return s / 2;
+}
+// strictly convex, no collinear corners, and winding exactly once (rejects stars)
+function isConvex(p) {
+  const n = p.length; let sg = 0, turn = 0;
+  for (let i = 0; i < n; i++) {
+    const a = unit(sub(p[(i + 1) % n], p[i])), b = unit(sub(p[(i + 2) % n], p[(i + 1) % n]));
+    const c = crs(a, b);
+    if (Math.abs(c) < 1e-3) return false;
+    if (!sg) sg = Math.sign(c); else if (Math.sign(c) !== sg) return false;
+    turn += Math.atan2(c, dot(a, b));
+  }
+  return Math.abs(Math.abs(turn) - 2 * Math.PI) < 1e-6;
+}
+function regularPts() {
+  return Array.from({ length: S.n }, (_, i) => {
+    const a = S.rot * DEG + i * 2 * Math.PI / S.n;
+    return [S.c.x + S.R * Math.cos(a), S.c.y + S.R * Math.sin(a)];
+  });
+}
+// Sutherland–Hodgman against one half-plane  nr·(q-P) - off >= 0
+function clipHP(poly, nr, P, off) {
+  const out = [], m = poly.length, f = q => nr[0] * (q[0] - P[0]) + nr[1] * (q[1] - P[1]) - off;
+  for (let i = 0; i < m; i++) {
+    const a = poly[i], b = poly[(i + 1) % m], fa = f(a), fb = f(b);
+    if (fa >= 0) out.push(a);
+    if ((fa >= 0) !== (fb >= 0)) { const t = fa / (fa - fb); out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]); }
+  }
+  return out;
+}
+function dedupe(p) {
+  const out = [];
+  p.forEach(q => { if (!out.length || Math.hypot(q[0] - out[out.length - 1][0], q[1] - out[out.length - 1][1]) > 1e-7) out.push(q); });
+  while (out.length > 1 && Math.hypot(out[0][0] - out[out.length - 1][0], out[0][1] - out[out.length - 1][1]) <= 1e-7) out.pop();
+  return out;
+}
+// ray p + t·u against a convex polygon → entry parameter t0 (or null if it misses / never enters)
+function rayEntry(p, u, poly) {
+  const sg = signedArea(poly) >= 0 ? 1 : -1, n = poly.length;
+  let t0 = 0, t1 = Infinity;
+  for (let i = 0; i < n; i++) {
+    const A = poly[i], B = poly[(i + 1) % n], e = sub(B, A), l = Math.hypot(e[0], e[1]) || 1;
+    const m = sg > 0 ? [-e[1] / l, e[0] / l] : [e[1] / l, -e[0] / l];
+    const den = dot(m, u), num = dot(m, sub(p, A));
+    if (Math.abs(den) < 1e-12) { if (num < 0) return null; continue; }
+    const t = -num / den;
+    if (den > 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+  }
+  return t0 < t1 - 1e-9 ? t0 : null;
+}
+
+function compute() {
+  const P = S.pts, n = P.length, sg = signedArea(P) >= 0 ? 1 : -1;
+  const nor = P.map((p, i) => {
+    const q = P[(i + 1) % n], dx = q[0] - p[0], dy = q[1] - p[1], l = Math.hypot(dx, dy) || 1;
+    return sg > 0 ? [-dy / l, dx / l] : [dy / l, -dx / l];
+  });
+
+  // concentric contours: the polygon clipped by every edge line pushed inward by k·d
+  const contours = []; let capped = false;
+  for (let k = 1; ; k++) {
+    if (k > MAXC) { capped = true; break; }
+    let poly = P.slice();
+    for (let i = 0; i < n && poly.length >= 3; i++) poly = clipHP(poly, nor[i], P[i], k * S.d);
+    poly = dedupe(poly);
+    if (poly.length < 3 || Math.abs(signedArea(poly)) < AREA_EPS) break;
+    contours.push(poly);
+  }
+  const inner = S.centreCut && contours.length ? contours[contours.length - 1] : null;
+
+  // corner bisectors (full rays to the polygon boundary), then first / last crossing with the other rays
+  const rays = P.map((p, i) => {
+    const a = unit(sub(p, P[(i + n - 1) % n])), b = unit(sub(P[(i + 1) % n], p)), u = unit(sub(b, a));
+    let ex = Infinity;
+    for (let j = 0; j < n; j++) {
+      const den = dot(nor[j], u);
+      if (den < -1e-12) ex = Math.min(ex, -dot(nor[j], sub(p, P[j])) / den);
+    }
+    return { p, u, ex, hits: [] };
+  });
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const A = rays[i], B = rays[j], den = crs(A.u, B.u);
+    if (Math.abs(den) < 1e-9) continue;
+    const d = sub(B.p, A.p), s = crs(d, B.u) / den, t = crs(d, A.u) / den;
+    if (s > 1e-9 && t > 1e-9 && s <= A.ex + 1e-9 && t <= B.ex + 1e-9) { A.hits.push(s); B.hits.push(t); }
+  }
+  const diags = rays.map(r => {
+    let s1 = r.hits.length ? Math.min(...r.hits) : r.ex, s2 = r.hits.length ? Math.max(...r.hits) : r.ex, trim = Infinity;
+    if (inner) { const t = rayEntry(r.p, r.u, inner); if (t !== null) trim = t; }
+    const at = t => [r.p[0] + r.u[0] * t, r.p[1] + r.u[1] * t];
+    const solidEnd = Math.min(s1, trim);
+    const d = { solid: [r.p, at(solidEnd)], ghost: null };
+    if (s1 < trim && s2 - s1 > 1e-4) d.ghost = [at(s1), at(Math.min(s2, trim))];
+    return d;
+  });
+  return { contours, inner, diags, capped };
+}
+
+/* ---------- view ---------- */
+function fitView() {
+  const r = cv.getBoundingClientRect(), asp = (r.width || 1) / (r.height || 1);
+  const xs = [0, S.W, ...S.pts.map(p => p[0])], ys = [0, S.H, ...S.pts.map(p => p[1])];
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  UI.view = { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: Math.max((x1 - x0) * 1.25, (y1 - y0) * 1.25 * asp, 20) };
+}
+
+/* ---------- render ---------- */
+let lastM = null;
+const polyStr = p => p.map(q => `${fmt(q[0])},${fmt(q[1])}`).join(' ');
+const ln = (a, b, extra = '') => `<line x1="${fmt(a[0])}" y1="${fmt(a[1])}" x2="${fmt(b[0])}" y2="${fmt(b[1])}" ${extra}/>`;
+
+/* ---------- margin crop ---------- */
+// Liang–Barsky: the part of segment a–b inside the margin rectangle, or null
+function crop(a, b) {
+  const bx0 = S.mx, by0 = S.my, bx1 = S.W - S.mx, by1 = S.H - S.my;
+  let t0 = 0, t1 = 1; const dx = b[0] - a[0], dy = b[1] - a[1];
+  const ps = [-dx, dx, -dy, dy], qs = [a[0] - bx0, bx1 - a[0], a[1] - by0, by1 - a[1]];
+  for (let i = 0; i < 4; i++) {
+    if (Math.abs(ps[i]) < 1e-12) { if (qs[i] < 0) return null; continue; }
+    const r = qs[i] / ps[i];
+    if (ps[i] < 0) { if (r > t1) return null; if (r > t0) t0 = r; }
+    else { if (r < t0) return null; if (r < t1) t1 = r; }
+  }
+  if ((t1 - t0) * Math.hypot(dx, dy) < 1e-6) return null;
+  return [[a[0] + t0 * dx, a[1] + t0 * dy], [a[0] + t1 * dx, a[1] + t1 * dy]];
+}
+const inMargin = p => p[0] >= S.mx - 1e-9 && p[0] <= S.W - S.mx + 1e-9 && p[1] >= S.my - 1e-9 && p[1] <= S.H - S.my + 1e-9;
+// A closed outline cropped to the margin: kept as one <polygon> when wholly inside, else the surviving edge pieces
+function cropPoly(p) {
+  if (p.every(inMargin)) return `<polygon points="${polyStr(p)}"/>`;
+  return p.map((a, i) => { const c = crop(a, p[(i + 1) % p.length]); return c ? ln(c[0], c[1]) : ''; }).join('');
+}
+const cropLn = (a, b) => { const c = crop(a, b); return c ? ln(c[0], c[1]) : ''; };
+const marginRect = () => `<rect x="${fmt(S.mx)}" y="${fmt(S.my)}" width="${fmt(S.W - 2 * S.mx)}" height="${fmt(S.H - 2 * S.my)}"/>`;
+// margin edges (l r t b): always draggable here (hypar has no edit modes); a bar marks each
+function hitMargin(p) {
+  const tol = 9 * pxmm(), { W, H, mx, my } = S, inX = p[0] > mx - tol && p[0] < W - mx + tol, inY = p[1] > my - tol && p[1] < H - my + tol;
+  if (inY && Math.abs(p[0] - mx) < tol) return 'l';
+  if (inY && Math.abs(p[0] - (W - mx)) < tol) return 'r';
+  if (inX && Math.abs(p[1] - my) < tol) return 't';
+  if (inX && Math.abs(p[1] - (H - my)) < tol) return 'b';
+  return null;
+}
+// drag edge e to p: its distance from the page edge becomes that margin, snapped to the grid, kept in 5–15 mm
+function dragMargin(e, p) {
+  const horiz = e === 'l' || e === 'r';
+  let d = e === 'l' ? p[0] : e === 'r' ? S.W - p[0] : e === 't' ? p[1] : S.H - p[1];
+  d = UI.snap ? OT.snapMargin(horiz ? S.W : S.H, d, 10 * pxmm()) : Math.round(d * 10) / 10;
+  d = clamp(d, 5, 15);
+  if (S.mLock) S.mx = S.my = d; else if (horiz) S.mx = d; else S.my = d;
+}
+const marginHandles = px => {
+  const r = 4 * px, { W, H, mx, my } = S;
+  return `<g fill="#fff" stroke="#b4532a" stroke-width="0.75" vector-effect="non-scaling-stroke">` +
+    [[mx, H / 2, r, 3 * r], [W - mx, H / 2, r, 3 * r], [W / 2, my, 3 * r, r], [W / 2, H - my, 3 * r, r]].map(([x, y, w, h]) => `<rect x="${fmt(x - w)}" y="${fmt(y - h)}" width="${fmt(2 * w)}" height="${fmt(2 * h)}"/>`).join('') + '</g>';
+};
+
+function render() {
+  const M = lastM = compute(), v = UI.view, r = cv.getBoundingClientRect();
+  const h = v.w * (r.height || 1) / (r.width || 1);
+  cv.setAttribute('viewBox', `${v.cx - v.w / 2} ${v.cy - h / 2} ${v.w} ${h}`);
+  const ctm = cv.getScreenCTM(), px = ctm && ctm.a ? 1 / ctm.a : 1;
+  const cc = $('colCut').value, cf = $('colFold').value, NS = 'vector-effect="non-scaling-stroke"';
+  let s = `<rect x="0" y="0" width="${S.W}" height="${S.H}" fill="#fffdf3" stroke="#a9b38c" stroke-width="0.5" ${NS}/>`;
+  s += OT.gridSVG([0, 0, S.W, S.H], [S.W / 2, S.H / 2], false);
+
+  const foldC = S.centreCut ? M.contours.slice(0, -1) : M.contours;
+  if (UI.ghost) {                                    // grey: first/last-crossing stretches, and whatever the margin crops away
+    let g = '';
+    M.diags.forEach(d => { if (d.ghost) g += ln(d.ghost[0], d.ghost[1]); });
+    [S.pts, ...M.contours].forEach(c => { if (!c.every(inMargin)) g += `<polygon points="${polyStr(c)}" fill="none"/>`; });
+    M.diags.forEach(d => { if (!inMargin(d.solid[0]) || !inMargin(d.solid[1])) g += ln(d.solid[0], d.solid[1]); });
+    s += `<g stroke="#a3a88f" stroke-width="0.5" stroke-dasharray="4 3" opacity=".9" ${NS}>${g}</g>`;
+  }
+
+  s += `<g stroke="${cf}" stroke-width="0.55" fill="none" stroke-linecap="round" stroke-linejoin="round" ${NS}>`;
+  foldC.forEach(c => { s += cropPoly(c); });
+  M.diags.forEach(d => { s += cropLn(d.solid[0], d.solid[1]); });
+  s += '</g>';
+  s += `<g stroke="${cc}" stroke-width="0.8" fill="none" stroke-linejoin="round" ${NS}>${marginRect()}${cropPoly(S.pts)}`;
+  if (M.inner) s += cropPoly(M.inner);
+  s += '</g>';
+
+  const q = 5 * px;
+  s += `<g fill="#fff" stroke="#b4532a" stroke-width="0.75" ${NS}>`;
+  S.pts.forEach(p => { s += `<rect x="${fmt(p[0] - q)}" y="${fmt(p[1] - q)}" width="${fmt(2 * q)}" height="${fmt(2 * q)}"/>`; });
+  s += '</g>';
+  if (S.regular) {
+    const c = S.c, d = q * 1.4;
+    s += `<polygon points="${c.x},${c.y - d} ${c.x + d},${c.y} ${c.x},${c.y + d} ${c.x - d},${c.y}" fill="#b4532a" stroke="#7a3316"/>`;
+  }
+  s += marginHandles(px);
+  if (UI.drag) s += OT.snapMark(px);
+  cv.innerHTML = s;
+  updateStatus(M);
+}
+function updateStatus(M) {
+  const t = S.regular
+    ? 'Drag empty canvas to define a polygon (centre → radius/rotation) · drag the ◆ to move it · drag a corner to resize/rotate · wheel zooms, right/middle-drag pans.'
+    : 'Drag a corner to reshape (the polygon is kept convex) · wheel zooms, right/middle-drag pans.';
+  let info = `<br>${M.contours.length} contour(s)${M.capped ? ` (capped at ${MAXC} — raise the offset width)` : ''}` +
+    (M.contours.length ? '' : ' — offset width is larger than the polygon can hold');
+  if (S.centreCut && M.inner) info += ' · innermost contour is a cut';
+  if (UI.drag && UI.drag.type === 'marg') info += '<br>Margin: ' + OT.marginInfo(S.W, S.H, S.mx, S.my) + ' · Alt = free';
+  if (UI.note) info += `<br><span class="bad">${UI.note}</span>`;
+  $('status').innerHTML = t + info;
+}
+
+/* ---------- sidebar sync ---------- */
+function syncUI() {
+  $('W').value = S.W; $('H').value = S.H; syncMargins(); syncSheet();
+  $('nS').value = S.n; $('rad').value = +S.R.toFixed(2); $('rot').value = +S.rot.toFixed(2);
+  $('reg').checked = S.regular; $('dw').value = S.d; $('cc').checked = S.centreCut;
+  $('rad').disabled = $('rot').disabled = !S.regular;
+}
+function setRegular() { S.pts = regularPts(); }
+
+$('nS').onchange = () => act(() => { S.n = clamp(Math.round(+$('nS').value) || 6, 3, 64); setRegular(); fitView(); });
+$('rad').onchange = () => act(() => { S.R = Math.max(1, +$('rad').value || 60); setRegular(); fitView(); });
+$('rot').onchange = () => act(() => { S.rot = +$('rot').value || 0; setRegular(); });
+$('reg').onchange = () => act(() => {
+  S.regular = $('reg').checked;
+  if (S.regular) {                                   // adopt the current shape's centre / size / phase so nothing jumps
+    const P = S.pts, n = P.length, cx = P.reduce((a, p) => a + p[0], 0) / n, cy = P.reduce((a, p) => a + p[1], 0) / n;
+    S.n = n; S.c = { x: cx, y: cy };
+    S.R = P.reduce((a, p) => a + Math.hypot(p[0] - cx, p[1] - cy), 0) / n;
+    S.rot = Math.atan2(P[0][1] - cy, P[0][0] - cx) / DEG;
+    setRegular();
+  }
+});
+['W', 'H'].forEach(id => $(id).onchange = () => act(() => {   // resize the sheet about its centre; the polygon keeps its place relative to it
+  const nw = Math.max(10, +$('W').value || S.W), nh = Math.max(10, +$('H').value || S.H), dx = (nw - S.W) / 2, dy = (nh - S.H) / 2;
+  S.W = nw; S.H = nh; S.c = { x: S.c.x + dx, y: S.c.y + dy }; S.pts = S.pts.map(p => [p[0] + dx, p[1] + dy]);
+  fitView();
+}));
+const syncMargins = OT.wireMargins({
+  get: () => [S.mx, S.my, S.mLock], set: (mx, my, lock) => act(() => { S.mx = mx; S.my = my; S.mLock = lock; }),
+  page: () => [S.W, S.H], polar: false, note: m => { UI.note = m; render(); },
+});
+const syncSheet = OT.wireSheet({ get: () => [S.W, S.H], set: (w, h) => { $('W').value = w; $('H').value = h; $('W').onchange(); } });
+$('dw').onchange = () => act(() => { S.d = Math.max(0.1, +$('dw').value || 3); });
+$('cc').onchange = () => act(() => { S.centreCut = $('cc').checked; });
+$('gh').onchange = () => { UI.ghost = $('gh').checked; render(); };
+['colCut', 'colFold'].forEach(id => $(id).oninput = render);
+$('bUndo').onclick = undo; $('bRedo').onclick = redo;
+addEventListener('keydown', e => {
+  if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) && document.activeElement.type !== 'checkbox') return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+});
+addEventListener('resize', render);
+
+/* ---------- export ---------- */
+function buildSVG(bg) {
+  const M = compute(), sw = +$('sw').value || 0.2, x0 = 0, y0 = 0, w = S.W, h = S.H;   // the whole sheet, true size
+  const foldC = S.centreCut ? M.contours.slice(0, -1) : M.contours;
+  const fold = foldC.map(cropPoly).join('') + M.diags.map(d => cropLn(d.solid[0], d.solid[1])).join('');
+  const cut = marginRect() + cropPoly(S.pts) + (M.inner ? cropPoly(M.inner) : '');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(w)}mm" height="${fmt(h)}mm" viewBox="${fmt(x0)} ${fmt(y0)} ${fmt(w)} ${fmt(h)}">` +
+    (bg ? `<rect x="${fmt(x0)}" y="${fmt(y0)}" width="${fmt(w)}" height="${fmt(h)}" fill="#fff"/>` : '') +
+    `<g id="fold" stroke="${$('colFold').value}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round">${fold}</g>` +
+    `<g id="cut" stroke="${$('colCut').value}" stroke-width="${sw}" fill="none" stroke-linejoin="round">${cut}</g></svg>`;
+}
+OT.wireExport({ base: 'hypar', svg: buildSVG, size: () => [S.W, S.H], project: () => projectDoc() });
+
+/* ---------- pointer interaction ---------- */
+function ptr(e) {
+  const pt = cv.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const q = pt.matrixTransform(cv.getScreenCTM().inverse()); return [q.x, q.y];
+}
+const pxmm = () => 1 / cv.getScreenCTM().a;
+
+/* snapping (engine in common.js; UI.snap is set per pointer event: checkbox on and Alt not held) */
+const sheetPts = () => { const { W, H, mx, my } = S; return [[W / 2, H / 2], [mx, my], [W - mx, my], [mx, H - my], [W - mx, H - my], [W / 2, my], [W / 2, H - my], [mx, H / 2], [W - mx, H / 2]]; };
+const snapP = (p, anchors = [], extra = []) => UI.snap ? OT.snap2D(p, { tol: 10 * pxmm(), points: [...sheetPts(), ...extra], anchors }) : p;
+function setFromCorner(i, p) {                       // regular mode: corner i follows the pointer
+  const dx = p[0] - S.c.x, dy = p[1] - S.c.y;
+  S.R = Math.max(1, Math.hypot(dx, dy));
+  S.rot = Math.atan2(dy, dx) / DEG - i * 360 / S.n;
+  setRegular();
+}
+function moveCorner(i, p) {                          // irregular: stop at the last position that keeps the polygon convex
+  const old = S.pts[i], test = q => { const c = S.pts.slice(); c[i] = q; return isConvex(c); };
+  if (test(p)) { S.pts[i] = p; return; }
+  let a = old, b = p;
+  for (let k = 0; k < 24; k++) { const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; if (test(m)) a = m; else b = m; }
+  S.pts[i] = a;
+}
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  const p = ptr(e), tol = 9 * pxmm();
+  UI.snap = OT.snapping(e);
+  if (e.button === 1 || e.button === 2) {
+    UI.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, v0: { ...UI.view }, k: pxmm() };
+    cv.setPointerCapture(e.pointerId); return;
+  }
+  if (e.button !== 0) return;
+  const vi = S.pts.findIndex(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < tol);
+  if (vi >= 0) UI.drag = { type: 'v', i: vi, j: snap(), pushed: false };
+  else if (S.regular && Math.hypot(p[0] - S.c.x, p[1] - S.c.y) < tol * 1.3) UI.drag = { type: 'c', off: [S.c.x - p[0], S.c.y - p[1]], j: snap(), pushed: false };
+  else if (hitMargin(p)) { UI.drag = { type: 'marg', edge: hitMargin(p), j: snap(), pushed: false }; UI.note = ''; }
+  else if (S.regular) { UI.drag = { type: 'new', j: snap(), pushed: false, start: snapP(p) }; }
+  else return;
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointermove', e => {
+  const d = UI.drag;
+  if (!d) { const me = hitMargin(ptr(e)); cv.style.cursor = me ? (me === 'l' || me === 'r' ? 'ew-resize' : 'ns-resize') : ''; return; }
+  if (d.type === 'pan') {
+    UI.view.cx = d.v0.cx - (e.clientX - d.sx) * d.k; UI.view.cy = d.v0.cy - (e.clientY - d.sy) * d.k;
+    render(); return;
+  }
+  const p = ptr(e);
+  UI.snap = OT.snapping(e);
+  if (d.type === 'new' && !d.pushed && Math.hypot(p[0] - d.start[0], p[1] - d.start[1]) < 3 * pxmm()) return;   // ignore a plain click
+  if (!d.pushed) { pushUndo(d.j); d.pushed = true; UI.note = ''; if (d.type === 'new') S.c = { x: d.start[0], y: d.start[1] }; }
+  const n = S.pts.length, others = i => S.pts.filter((_, k) => k !== i);
+  if (d.type === 'marg') { dragMargin(d.edge, p); syncUI(); render(); return; }
+  if (d.type === 'new') setFromCorner(0, snapP(p, [[S.c.x, S.c.y]]));
+  else if (d.type === 'c') {                           // moving the whole polygon: snap the centre or any corner, whichever is nearest a target
+    const raw = [p[0] + d.off[0], p[1] + d.off[1]], rel = S.pts.map(q => [q[0] - S.c.x, q[1] - S.c.y]);
+    let shift = [0, 0], bd = Infinity, mark = null;
+    if (UI.snap) [[0, 0], ...rel].forEach(r => {
+      const at = [raw[0] + r[0], raw[1] + r[1]], q = snapP(at);
+      const dd = Math.hypot(q[0] - at[0], q[1] - at[1]);
+      if (OT.lastSnap && dd < bd) { bd = dd; shift = [q[0] - at[0], q[1] - at[1]]; mark = OT.lastSnap; }
+    });
+    OT.lastSnap = mark;
+    S.c = { x: raw[0] + shift[0], y: raw[1] + shift[1] }; setRegular();
+  }
+  else if (S.regular) setFromCorner(d.i, snapP(p, [[S.c.x, S.c.y]]));
+  else moveCorner(d.i, snapP(p, [S.pts[(d.i + n - 1) % n], S.pts[(d.i + 1) % n]], others(d.i)));
+  syncUI(); render();
+});
+const endDrag = () => { UI.drag = null; OT.lastSnap = null; render(); };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+// Wheel zoom and the View buttons (pan is this page's own, on the middle/right button, above)
+OT.wireZoom({
+  svg: cv,
+  get: () => { const r = cv.getBoundingClientRect(), v = UI.view, h = v.w * (r.height || 1) / (r.width || 1);
+    return { x0: v.cx - v.w / 2, y0: v.cy - h / 2, x1: v.cx + v.w / 2, y1: v.cy + h / 2 }; },
+  set: b => { UI.view = { cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, w: b.x1 - b.x0 }; },
+  fit: fitView, render,
+});
+
+/* ---------- init ---------- */
+OT.wireGrid(render);
+setRegular(); syncUI(); fitView(); render();
+// Project files: the model S. Missing fields fall back to the start-up defaults; a load is one undo step.
+const S0 = snap();
+const projectDoc = OT.wireProject({
+  tool: 'hypar', version: 1, templates: 'templates/index.txt',
+  get: () => JSON.parse(snap()),
+  set: st => act(() => {
+    if (st.m !== undefined) { st.mx = st.my = st.m; delete st.m; }   // files from before there were two margins
+    Object.assign(S, JSON.parse(S0), st); fitView();
+  }),
+});
+</script>
+</body>
+</html>

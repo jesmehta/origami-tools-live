@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>X Span Generator</title>
+<link rel="stylesheet" href="../common/common.css">
+<script src="../common/common.js"></script>
+<style>
+:root{--bg:#eef0dc;--panel:#fbf9ec;--ink:#243322;--mute:#6b7556;--line:#cdd5b4;--acc:#b4532a;}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{font:13px/1.4 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+#app{display:grid;grid-template-columns:340px 1fr;height:100%}
+aside{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:12px 14px 30px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#cv{flex:1;min-height:0;width:100%;background:#d9e2c4;touch-action:none;display:block}
+#status{padding:6px 12px;border-top:1px solid var(--line);background:var(--panel);color:var(--mute);min-height:44px}
+#status .bad{color:#a8401c;font-weight:600}
+#status .ok{color:#2e7d32;font-weight:600}
+h1{font-size:15px;margin:0 0 10px}
+fieldset{border:1px solid var(--line);border-radius:6px;margin:0 0 10px;padding:8px 10px 10px}
+legend{font-weight:600;padding:0 4px}
+.row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:5px 0}
+label{display:inline-flex;align-items:center;gap:5px}
+input[type=number]{width:64px;padding:3px 4px}
+input[type=number]:disabled{background:#eef0e0;color:#555;border:1px solid #ddd}
+input[type=color]{width:30px;height:22px;padding:0;border:1px solid var(--line)}
+select{font:inherit;padding:3px 4px}
+button{font:inherit;padding:4px 9px;border:1px solid #b9c29c;border-radius:4px;background:#f7f3dc;cursor:pointer}
+button:hover{background:#efe6bd}
+button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+#hRows .row{margin:2px 0}
+input[type=range]{width:120px}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.note{color:var(--mute);font-size:12px;margin:4px 0 0}
+@media(max-width:780px){#app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}aside{max-height:48vh}main{height:70vh}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside>
+  <a class="ot-back" href="../index.html">Origami tools</a>
+  <h1>X Span Generator</h1>
+  <div id="projSlot"></div>
+
+  <fieldset><legend>Sheet</legend>
+    <div class="row">
+      <label>Size <select id="pgSel"></select></label>
+      <button id="pgSwap" data-tip="Swap portrait / landscape">⇄</button>
+    </div>
+    <div class="row">
+      <label>W <input type="number" id="W" min="10" step="1"> mm</label>
+      <label>H <input type="number" id="H" min="10" step="1"> mm</label>
+    </div>
+    <div id="margSlot"></div>
+  </fieldset>
+  <div id="gridSlot"></div>
+
+  <fieldset><legend>Grid type</legend>
+    <div class="row">
+      <button id="kReg" class="on" data-tip="Verticals evenly spread; the rhombi tile into a grid of straight lines.">Regular</button>
+      <button id="kMW" data-tip="Constant height, verticals free (still vertical): the rhombi still tile, but the lines bend at each vertical.">Const H · move W</button>
+      <button id="kMH" data-tip="Constant vertical spacing, each chain row has its own height: the lines bend where the height changes.">Const W · move H</button>
+      <button id="kMB" data-tip="Verticals free and each chain row has its own height.">Move both</button>
+    </div>
+  </fieldset>
+
+  <fieldset id="panReg"><legend data-tip="Number: first and last vertical on the rectangle edges. Distance / minor diagonal (= 2 × distance): verticals from x = 0 at that spacing; a last vertical beyond the right edge is kept (grey) so the grid fills the rectangle.">Verticals · evenly spread</legend>
+    <div class="row"><label>Define by
+      <select id="vIn">
+        <option value="count">Number of verticals</option>
+        <option value="dist">Distance between verticals</option>
+        <option value="minor">Rhombus minor diagonal</option>
+      </select></label></div>
+    <div class="row">
+      <label>Number <input type="number" id="rN" min="2" max="400" step="1"></label>
+      <label>Distance <input type="number" id="rD" min="0.5" step="0.5"> mm</label>
+      <label>Minor diag. <input type="number" id="rM" min="1" step="1"> mm</label>
+    </div>
+  </fieldset>
+
+  <fieldset id="panIrr" hidden><legend data-tip="Always exactly vertical. Start from an even spread, then drag / type / add / delete verticals in Verticals mode. The lines bend (refract) at each vertical so every rhombus vertex lands on one.">Verticals · free</legend>
+    <div class="row">
+      <label>Count <input type="number" id="gN" min="2" max="40" step="1"></label>
+      <label>Spacing <input type="number" id="gSp" min="1" step="0.5"> mm</label>
+      <label>First x <input type="number" id="gSt" step="0.5"> mm</label>
+    </div>
+    <div class="row">
+      <button id="bFit">Fit edge to edge</button>
+      <button id="bReset">Reset verticals</button>
+      <button id="rV">Randomize</button>
+    </div>
+    <div class="row" id="selV" hidden>
+      <b>V<span id="selVn"></span></b>
+      <label>x <input type="number" id="vx" step="0.5"> mm</label>
+      <span>
+        <button id="nudL" data-tip="Move left by the step">◀</button>
+        <button id="nudR" data-tip="Move right by the step">▶</button>
+        <input type="number" id="step" value="1" min="0.1" step="0.5" style="width:52px"> mm
+      </span>
+    </div>
+  </fieldset>
+
+  <fieldset><legend data-tip="θ is the angle of a rhombus side to the horizontal (h = distance × tan θ, taken from the first section V1–V2). Number of chains (in steps of 0.5, so the last row can be half a rhombus): the vertical diagonals stack to fill the rectangle height exactly (2h = H ÷ chains), and θ follows. With constant heights every rhombus has the same vertical diagonal 2h; with variable heights this is the reference h that each chain row scales.">Rhombus</legend>
+    <div class="row"><label>Define by
+      <select id="aIn">
+        <option value="angle">Angle θ</option>
+        <option value="chains">Number of chains</option>
+      </select></label></div>
+    <div class="row">
+      <label>Angle θ <input type="number" id="th" min="0.5" max="89.5" step="0.5"> °</label>
+      <label>Chains <input type="number" id="nCh" min="0.5" max="200" step="0.5"></label>
+    </div>
+    <p class="note" id="derived"></p>
+  </fieldset>
+
+  <fieldset id="panH" hidden><legend data-tip="One half-height h per chain row, top to bottom (the rhombus vertical diagonal is 2h). Drag the circles on the canvas up/down, or use the sliders. Rows below the last one keep its height. The Rhombus angle / chains setting scales all heights together.">Chain heights</legend>
+    <div id="hRows"></div>
+    <div class="row">
+      <label>First h <input type="number" id="gh0" min="0.3" step="0.5"> mm</label>
+      <label>Last h <input type="number" id="gh1" min="0.3" step="0.5"> mm</label>
+      <label>Curve <select id="gcv"><option value="linear">linear</option><option value="in">ease in</option><option value="out">ease out</option><option value="inout">ease in-out</option></select></label>
+    </div>
+    <div class="row">
+      <button id="bProf" data-tip="First → last h over the rows now on the canvas, following the chosen curve.">Apply profile</button>
+      <button id="bHRand">Randomize</button>
+      <button id="bHFit" data-tip="Scale all heights so the chains now shown end exactly at the bottom edge.">Fit to height</button>
+      <button id="bHReset">All equal</button>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>Grid position</legend>
+    <div class="row">
+      <label data-tip="Shifts the whole grid vertically (0 = the first chain's top vertex sits on the top edge). You can also drag empty space in Grid mode.">y offset <input type="number" id="yo" step="0.5"> mm</label>
+      <button id="bYo" data-tip="Set the y offset back to 0">Reset</button>
+      <label data-tip="Which verticals carry the crossing points of the chains; the other verticals carry the offset '1.5' rows.">Chains cross on
+        <select id="ph">
+          <option value="0">V1, V3, V5…</option>
+          <option value="1">V2, V4, V6…</option>
+        </select></label>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>Edit mode</legend>
+    <div class="row">
+      <button id="mGrid" class="on">Grid</button>
+      <button id="mVerts">Verticals</button>
+      <button id="mMeas" data-tip="Click two points (distance) or two lines (angle); pick which in Dimensions.">Measure</button>
+      <button id="mMarg" data-tip="Drag the edges of the margin. They snap to the grid, so the area inside holds whole grid steps (Alt = free). The opposite edge follows; with 🔗 all four do.">Margin</button>
+    </div>
+    <div class="row"><button id="bDel">Delete selected vertical</button></div>
+  </fieldset>
+  <div id="viewSlot"></div>
+
+  <fieldset><legend>Dimensions</legend>
+    <div class="row"><label><input type="checkbox" id="gh" checked> Show off-rectangle ghost lines (grey)</label></div>
+    <div class="row"><label><input type="checkbox" id="dEdge"> Section widths (mm)</label></div>
+    <div class="row"><label><input type="checkbox" id="dAng"> Line angles (°)</label></div>
+    <div class="row"><label><input type="checkbox" id="dDiag"> Vertical diagonal lengths (mm)</label></div>
+    <div class="row">
+      <label><input type="radio" name="mt" id="mtD" value="dist" checked> Measure distance (2 points)</label>
+      <label><input type="radio" name="mt" value="angle"> Measure angle (2 lines)</label>
+    </div>
+    <div class="row"><button id="mClear" data-tip="Measurements are snapshots; they don't follow later edits.">Clear measurements</button></div>
+  </fieldset>
+
+  <fieldset><legend>Export</legend>
+    <div class="row">
+      <label>Lines <input type="color" id="colLine" value="#2e8b57"></label>
+      <label>Margin (cut) <input type="color" id="colRect" value="#111111"></label>
+    </div>
+    <div class="row">
+      <label>Stroke <input type="number" id="sw" value="0.2" min="0.05" step="0.05"> mm</label>
+      <label>PNG <input type="number" id="ppm" value="6" min="1" max="30" step="1"> px/mm</label>
+    </div>
+    <div class="row">
+      <button id="xSvg" class="pri">Export SVG</button>
+      <button id="xPng" class="pri">Export PNG</button>
+      <button id="xZip" class="pri" data-tip="SVG + PNG together in one .zip (same time-stamped name).">Export ZIP</button>
+    </div>
+  </fieldset>
+
+  <div class="row"><button id="bUndo">Undo</button><button id="bRedo">Redo</button></div>
+</aside>
+<main>
+  <svg id="cv" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="status"></div>
+</main>
+</div>
+
+<script>
+'use strict';
+/* X Span generator — a lattice of rhombi whose vertices all lie on vertical lines.
+   Regular: verticals evenly spread, straight lines. Irregular: free verticals, lines bend at each one. */
+const GAP = 1;                                   // min mm between neighbouring verticals (irregular)
+const MAXSEG = 30000;                            // safety cap on generated segments
+const MAXROWS = 4000, MINH = 0.3;                // row cap; smallest allowed half-height (mm)
+const DEG = Math.PI / 180;
+const POLAR = false;                              // square grid: margins can be fitted to it
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const fmt = n => +n.toFixed(4);
+const half = x => Math.round(x * 2) / 2;
+const isFreeX = () => S.kind === 'movW' || S.kind === 'both';   // verticals movable
+const isVarH = () => S.kind === 'movH' || S.kind === 'both';    // heights variable per chain row
+const $ = id => document.getElementById(id);
+const cv = $('cv');
+$('gridSlot').outerHTML = OT.gridFieldset(false);
+$('projSlot').outerHTML = OT.projectFieldset();
+$('margSlot').outerHTML = OT.marginRow();
+$('viewSlot').outerHTML = OT.zoomFieldset();
+
+/* ---------- state ---------- */
+const S = {
+  W: 277, H: 190,        // the area inside the margins (origin at its top-left); the page is W + 2·mx × H + 2·my
+  mx: 10, my: 10, mLock: true,   // margins: left & right, top & bottom (5–15 mm); mLock keeps them equal
+  kind: 'regular',      // 'regular' | 'movW' (const H, free verticals) | 'movH' (const W, variable heights) | 'both'
+  xs: [],               // x of each vertical, sorted (regular: derived from `reg`; irregular: the state)
+  layout: 'gen',        // irregular: 'gen' (from the fields) | 'free' (hand-edited)
+  reg: { v: 'count', n: 7, d: 50, m: 100 },
+  gen: { n: 7, spacing: 50, start: 0 },
+  a: 'angle',           // what defines the rhombus: 'angle' | 'chains'
+  theta: 25, nCh: 2,
+  ratio: [1],           // variable heights: h of chain row j = reference h × ratio[j] (rows past the end repeat the last)
+  prof: { h0: 15, h1: 35, curve: 'linear' },
+  yoff: 0,              // y of the first chain's top vertex (constant heights: the grid is periodic, 2h)
+  ph: 0,                // chains cross on verticals ph, ph+2, …
+};
+const UI = {
+  mode: 'grid', shift: false, selV: -1, viewLock: null, view: null,
+  meas: [], mp: null, mcur: null, note: '', ghost: true, ang: null,
+  dim: { edge: false, ang: false, diag: false },
+};
+
+/* ---------- undo ---------- */
+const undoS = [], redoS = [];
+const snap = () => JSON.stringify(S);
+function restore(j) { Object.assign(S, JSON.parse(j)); UI.selV = -1; syncUI(); render(); }
+function pushUndo(j) { undoS.push(j || snap()); if (undoS.length > 80) undoS.shift(); redoS.length = 0; }
+function act(fn) { pushUndo(); UI.note = ''; fn(); syncUI(); render(); }
+function undo() { if (!undoS.length) return; redoS.push(snap()); restore(undoS.pop()); }
+function redo() { if (!redoS.length) return; undoS.push(snap()); restore(redoS.pop()); }
+
+/* ---------- geometry ---------- */
+// Liang–Barsky crop to a box (default: the rectangle)
+function clipBox(x1, y1, x2, y2, bx0 = 0, by0 = 0, bx1 = S.W, by1 = S.H) {
+  let t0 = 0, t1 = 1; const dx = x2 - x1, dy = y2 - y1;
+  const ps = [-dx, dx, -dy, dy], qs = [x1 - bx0, bx1 - x1, y1 - by0, by1 - y1];
+  for (let i = 0; i < 4; i++) {
+    if (Math.abs(ps[i]) < 1e-12) { if (qs[i] < 0) return null; continue; }
+    const r = qs[i] / ps[i];
+    if (ps[i] < 0) { if (r > t1) return null; if (r > t0) t0 = r; }
+    else { if (r < t0) return null; if (r < t1) t1 = r; }
+  }
+  if ((t1 - t0) * Math.hypot(dx, dy) < 1e-6) return null;
+  return [x1 + t0 * dx, y1 + t0 * dy, x1 + t1 * dx, y1 + t1 * dy];
+}
+function distSeg(p, a, b) {
+  const ex = b[0] - a[0], ey = b[1] - a[1], L = ex * ex + ey * ey || 1;
+  const t = clamp(((p.x - a[0]) * ex + (p.y - a[1]) * ey) / L, 0, 1);
+  return Math.hypot(p.x - a[0] - t * ex, p.y - a[1] - t * ey);
+}
+
+// Half-height of every rhombus: from θ and the first section, or so that `chains` vertical diagonals fill H.
+function gridH() {
+  const X = S.xs;
+  if (X.length < 2) return 0;
+  return S.a === 'angle' ? (X[1] - X[0]) * Math.tan(S.theta * DEG) : S.H / (2 * S.nCh);
+}
+const normY = y => { if (isVarH()) return y; const h = gridH(), P = 2 * h; return P > 1e-9 ? ((y % P) + P) % P : y; };
+const ensureRatio = n => { while (S.ratio.length < n) S.ratio.push(S.ratio[S.ratio.length - 1]); };
+const hAt = j => { const h = gridH(); return isVarH() ? h * S.ratio[clamp(j, 0, S.ratio.length - 1)] : h; };   // half-height of chain row j
+
+// Touch levels t_j: t_0 = yoff and t_{j+1} = t_j + 2·h_j (rows above t_0 repeat row 0's height). Runs until t ≤ lo and t > hi.
+function touchLevels(lo, hi) {
+  if (!(gridH() > 1e-6)) return [{ j: 0, t: S.yoff }];
+  const up = [], dn = [{ j: 0, t: S.yoff }];
+  let j = 0, t = S.yoff;
+  while (t > lo && up.length < MAXROWS) { j--; t -= 2 * hAt(j); up.push({ j, t }); }
+  j = 0; t = S.yoff;
+  while (t <= hi && dn.length < MAXROWS) { t += 2 * hAt(j); j++; dn.push({ j, t }); }
+  return up.reverse().concat(dn);
+}
+// chain rows currently on the canvas (j ≥ 0, starting inside the rectangle) with their half-heights
+function rowHs() {
+  const T = touchLevels(0, S.H), out = [];
+  for (let i = 0; i < T.length - 1; i++) if (T[i].j >= 0 && T[i].t < S.H - 1e-6) out.push({ j: T[i].j, t: T[i].t, h: hAt(T[i].j) });
+  return out;
+}
+function chainsFit() {                                  // chain rows inside the rectangle, fractional
+  const T = touchLevels(0, S.H); let f = 0;
+  for (let i = 0; i < T.length - 1; i++) {
+    const a = T[i].t, b = T[i + 1].t, ov = Math.min(b, S.H) - Math.max(a, 0);
+    if (ov > 0) f += ov / (b - a);
+  }
+  return f;
+}
+
+// The lattice. Chain row j is a run of rhombi with vertical diagonals from t_j to t_{j+1} on the "touch" verticals and
+// horizontal diagonals at c_j = t_j + h_j (the crossings) on the other verticals. Each crossing joins the touch vertices
+// above and below it on the next vertical, so rhombi touch vertex to vertex, the "1.5" rows appear between the chains,
+// and every vertex lies on a vertical. Segments carry `c`, the part inside the rectangle.
+function computeGrid() {
+  const X = S.xs, n = X.length, h = gridH(), segs = [], diags = [], res = { segs, diags, h, capped: false };
+  if (n < 2 || !(h > 1e-6)) return res;
+  const pad = Math.max(S.W, S.H) * 0.08, T = touchLevels(-pad, S.H + pad);
+  if (T.length >= MAXROWS || (T.length - 1) * (n - 1) * 2 > MAXSEG) { res.capped = true; return res; }
+  const isT = k => (k + S.ph) % 2 === 1;               // this vertical carries the touch levels
+  const add = (xa, ya, xb, yb) => segs.push({ s: [xa, ya, xb, yb], c: clipBox(xa, ya, xb, yb) });
+  let prevC = null;
+  for (let i = 0; i < T.length - 1; i++) {
+    const tj = T[i].t, hj = hAt(T[i].j), cj = tj + hj, tn = tj + 2 * hj;
+    for (let k = 0; k < n; k++) {
+      if (isT(k)) diags.push({ v: k, y1: tj, y2: tn });
+      else if (prevC !== null) diags.push({ v: k, y1: prevC, y2: cj });
+      if (k === n - 1) continue;
+      if (isT(k)) { add(X[k], tj, X[k + 1], cj); add(X[k + 1], cj, X[k], tn); }
+      else { add(X[k], cj, X[k + 1], tj); add(X[k], cj, X[k + 1], tn); }
+    }
+    prevC = cj;
+  }
+  return res;
+}
+
+/* ---------- verticals ---------- */
+function xRange(i) { return { lo: i > 0 ? S.xs[i - 1] + GAP : 0, hi: i < S.xs.length - 1 ? S.xs[i + 1] - GAP : S.W }; }
+function setX(i, x) { const { lo, hi } = xRange(i); if (lo > hi) return; S.xs[i] = clamp(x, lo, hi); S.layout = 'free'; }
+function sanitize() {
+  const n = S.xs.length;
+  for (let i = 0; i < n; i++) S.xs[i] = clamp(Math.max(S.xs[i], i ? S.xs[i - 1] + GAP : 0), 0, S.W);
+  for (let i = n - 1; i >= 0; i--) S.xs[i] = Math.min(S.xs[i], i < n - 1 ? S.xs[i + 1] - GAP : S.W);
+}
+function regularD() { const R = S.reg; return Math.max(0.5, R.v === 'count' ? S.W / (R.n - 1) : R.v === 'dist' ? R.d : R.m / 2); }
+function regularXs() {
+  const R = S.reg, d = regularD(), n = R.v === 'count' ? R.n : Math.min(400, Math.ceil(S.W / d - 1e-9) + 1);
+  return Array.from({ length: n }, (_, i) => i * d);
+}
+function genXs() {
+  const g = S.gen, n = g.n;
+  g.start = clamp(g.start, 0, S.W - (n - 1) * GAP);
+  g.spacing = Math.max(GAP, Math.min(g.spacing, (S.W - g.start) / (n - 1)));
+  return Array.from({ length: n }, (_, i) => g.start + i * g.spacing);
+}
+function regen() { S.xs = isFreeX() ? genXs() : regularXs(); S.layout = 'gen'; }
+function addVertical(x) {
+  const V = S.xs, i = V.filter(v => v < x).length;
+  if ((i > 0 && x < V[i - 1] + GAP) || (i < V.length && x > V[i] - GAP)) { UI.note = 'That vertical would touch a neighbour (min gap ' + GAP + ' mm).'; return false; }
+  V.splice(i, 0, x); S.layout = 'free'; S.gen.n = V.length; UI.selV = i; UI.note = '';
+  return true;
+}
+function delVertical(j) { S.xs.splice(j, 1); S.layout = 'free'; S.gen.n = S.xs.length; UI.selV = -1; }
+function randomVerts() {
+  const n = S.xs.length, sp = S.W / (n - 1), j = sp * 0.45;
+  S.xs = Array.from({ length: n }, (_, i) => clamp(i * sp + (Math.random() - 0.5) * 2 * j, 0, S.W));
+  S.layout = 'free'; sanitize();
+}
+function setKind(k) {
+  if (k === S.kind) return;
+  act(() => {
+    const wasFree = isFreeX();
+    S.kind = k; UI.selV = -1;
+    if (isVarH() && !S.ratio.length) S.ratio = [1];
+    if (!isFreeX()) regen();
+    else if (!wasFree) {                             // start from the regular layout (minus verticals beyond the edge)
+      const keep = S.xs.filter(x => x <= S.W + 1e-6);
+      if (keep.length >= 2) { S.xs = keep; S.gen = { n: keep.length, spacing: keep[1] - keep[0], start: keep[0] }; S.layout = 'gen'; }
+      else regen();
+    }
+  });
+}
+
+/* ---------- view ---------- */
+function bounds() {
+  if (UI.viewLockPage) { const L = UI.viewLockPage; return { x0: L.x0 - S.mx, y0: L.y0 - S.my, x1: L.x1 - S.mx, y1: L.y1 - S.my }; }   // margin drag: hold the page still
+  if (UI.viewLock) return UI.viewLock;
+  if (UI.view) return UI.view;                           // zoomed / panned by hand; Fit view clears it
+  const pad = Math.max(S.W, S.H) * 0.08, ex = pad + S.mx, ey = pad + S.my;
+  return { x0: -ex, y0: -ey, x1: S.W + ex, y1: S.H + ey };
+}
+const edgeVert = x => x < 1e-6 || x > S.W - 1e-6;      // on/outside a rectangle edge: not drawn as a line inside
+let lastG = { segs: [], diags: [], h: 0 };
+
+function effMode(shift) {
+  if (UI.mode === 'measure' || UI.mode === 'margin') return UI.mode;
+  if (!isFreeX()) return 'grid';
+  return shift ? (UI.mode === 'grid' ? 'verts' : 'grid') : UI.mode;
+}
+
+/* ---------- render ---------- */
+function render() {
+  const b = bounds();
+  cv.setAttribute('viewBox', `${b.x0} ${b.y0} ${b.x1 - b.x0} ${b.y1 - b.y0}`);
+  const ctm = cv.getScreenCTM(), px = ctm && ctm.a ? 1 / ctm.a : 1;
+  const lc = $('colLine').value, rc = $('colRect').value, NS = 'vector-effect="non-scaling-stroke"';
+  const ln = (a, b2, c, d, extra = '') => `<line x1="${fmt(a)}" y1="${fmt(b2)}" x2="${fmt(c)}" y2="${fmt(d)}" ${extra}/>`;
+  const T = (x, y, txt, o = {}) => `<text x="${fmt(x)}" y="${fmt(y)}" font-size="${fmt(11 * px)}" text-anchor="${o.a || 'middle'}" fill="${o.c || '#2c3627'}" stroke="#fff" stroke-width="${fmt(3 * px)}" paint-order="stroke" stroke-linejoin="round" font-family="system-ui,sans-serif">${txt}</text>`;
+  const X = S.xs, G = lastG = computeGrid();
+  const len = a => Math.hypot(a[2] - a[0], a[3] - a[1]);
+  let s = `<rect x="${-S.mx}" y="${-S.my}" width="${S.W + 2 * S.mx}" height="${S.H + 2 * S.my}" fill="#fffdf3" stroke="#a9b38c" stroke-width="0.5" ${NS}/>`;
+  s += OT.gridSVG([-S.mx, -S.my, S.W + S.mx, S.H + S.my], [S.W / 2, S.H / 2], false);
+  s += `<rect x="0" y="0" width="${S.W}" height="${S.H}" fill="none" stroke="${rc}" stroke-width="1" ${NS}/>`;
+
+  const cut = G.segs.filter(g => g.c && len(g.s) - len(g.c) > 1e-6).length, out = G.segs.filter(g => !g.c).length;
+  UI.cut = cut; UI.out = out;
+  if (UI.ghost) {                                   // grey ghosts: whatever the rectangle crops away
+    let g = '';
+    G.segs.forEach(sg => {
+      if (sg.c && len(sg.s) - len(sg.c) < 1e-6) return;
+      const c = clipBox(sg.s[0], sg.s[1], sg.s[2], sg.s[3], b.x0, b.y0, b.x1, b.y1);
+      if (c) g += ln(...c);
+    });
+    X.forEach(x => { if (x > S.W + 1e-6 && x < b.x1) g += ln(x, b.y0, x, b.y1); });
+    s += `<g stroke="#a3a88f" stroke-width="0.5" stroke-dasharray="4 3" opacity=".85" ${NS}>${g}</g>`;
+  }
+
+  s += `<g stroke="${lc}" stroke-width="0.55" fill="none" stroke-linecap="round" ${NS}>`;
+  X.forEach(x => { if (!edgeVert(x)) s += ln(x, 0, x, S.H); });
+  G.segs.forEach(g => { if (g.c) s += ln(...g.c); });
+  s += '</g>';
+
+  if (UI.selV >= 0 && X[UI.selV] !== undefined) s += ln(X[UI.selV], 0, X[UI.selV], S.H, `stroke="#b4532a" stroke-width="2.5" opacity=".3" ${NS}`);
+
+  // dimensions
+  const D = UI.dim, ink = '#4a5640';
+  if (D.edge && X.length) {
+    const y = -10 * px, arr = [0, ...X.filter(x => x <= S.W + 1e-6), S.W];
+    for (let i = 0; i < arr.length - 1; i++) {
+      const a = arr[i], c = arr[i + 1];
+      if (c - a < 0.05) continue;
+      s += `<g stroke="${ink}" stroke-width="0.5" ${NS}>${ln(a, y, c, y)}${ln(a, y - 3 * px, a, y + 3 * px)}${ln(c, y - 3 * px, c, y + 3 * px)}</g>`;
+      if ((c - a) / px > 26) s += T((a + c) / 2, y - 4 * px, (c - a).toFixed(1));
+    }
+  }
+  if (D.ang) G.segs.forEach(g => {
+    if (!g.c || len(g.c) / px < 34) return;
+    const a = Math.abs(Math.atan2(g.c[3] - g.c[1], g.c[2] - g.c[0]) / DEG);
+    s += T((g.c[0] + g.c[2]) / 2, (g.c[1] + g.c[3]) / 2 - 3 * px, (a > 90 ? 180 - a : a).toFixed(1) + '°', { c: '#b4532a' });
+  });
+  if (D.diag) G.diags.forEach(d => {
+    if (X[d.v] > S.W + 1e-6) return;
+    const y1 = clamp(d.y1, 0, S.H), y2 = clamp(d.y2, 0, S.H);
+    if ((y2 - y1) / px > 26) s += T(X[d.v] + 5 * px, (y1 + y2) / 2 + 3 * px, (d.y2 - d.y1).toFixed(1), { a: 'start', c: '#2f6b5a' });
+  });
+
+  // measurements
+  const mc = '#c98a00';
+  UI.meas.forEach(m => {
+    if (m.type === 'dist') {
+      const d = Math.hypot(m.q[0] - m.p[0], m.q[1] - m.p[1]);
+      s += `<g stroke="${mc}" stroke-width="0.75" ${NS}>${ln(m.p[0], m.p[1], m.q[0], m.q[1])}</g>`;
+      s += `<circle cx="${m.p[0]}" cy="${m.p[1]}" r="${3 * px}" fill="${mc}"/><circle cx="${m.q[0]}" cy="${m.q[1]}" r="${3 * px}" fill="${mc}"/>`;
+      s += T((m.p[0] + m.q[0]) / 2, (m.p[1] + m.q[1]) / 2 - 5 * px, `${d.toFixed(2)} mm  (Δx ${Math.abs(m.q[0] - m.p[0]).toFixed(1)}, Δy ${Math.abs(m.q[1] - m.p[1]).toFixed(1)})`, { c: mc });
+    } else {
+      s += `<g stroke="${mc}" stroke-width="1.5" opacity=".65" ${NS}>${ln(...m.l1)}${ln(...m.l2)}</g>`;
+      s += T(m.at[0], m.at[1] - 6 * px, `${m.acute.toFixed(2)}° / ${(180 - m.acute).toFixed(2)}°`, { c: mc });
+    }
+  });
+  if (UI.mp) {
+    if (UI.mp.pt) {
+      s += `<circle cx="${UI.mp.pt[0]}" cy="${UI.mp.pt[1]}" r="${4 * px}" fill="${mc}"/>`;
+      if (UI.mcur) s += ln(UI.mp.pt[0], UI.mp.pt[1], UI.mcur[0], UI.mcur[1], `stroke="${mc}" stroke-dasharray="5 4" stroke-width="0.6" ${NS}`);
+    } else if (UI.mp.line) s += ln(...UI.mp.line, `stroke="${mc}" stroke-width="1.5" opacity=".65" ${NS}`);
+  }
+
+  if (UI.ang) {                                      // angle sweep guide: anchor, pointer ray, angle
+    const g = UI.ang, ac = '#b4532a', r0 = 5 * px;
+    s += ln(g.ax, g.ay, g.cur[0], g.cur[1], `stroke="${ac}" stroke-dasharray="5 4" stroke-width="0.75" ${NS}`);
+    s += `<circle cx="${fmt(g.ax)}" cy="${fmt(g.ay)}" r="${fmt(r0 * 1.2)}" fill="${ac}" opacity=".85"/>`;
+    s += T(g.ax + (g.cur[0] < g.ax ? -1 : 1) * 12 * px, g.ay - 8 * px, S.theta.toFixed(1) + '°', { c: ac, a: g.cur[0] < g.ax ? 'end' : 'start' });
+  }
+  if (isVarH() && effMode(UI.shift) === 'grid') {    // touch-level handles: drag up/down to trade height between the chains above and below
+    const r = 5 * px;
+    s += `<g fill="#fff" stroke="#c98a00" stroke-width="0.75" ${NS}>`;
+    touchHandles().forEach(q => { s += `<circle cx="${fmt(q.x)}" cy="${fmt(q.y)}" r="${fmt(r)}"/>`; });
+    s += '</g>';
+  }
+  if (effMode(UI.shift) === 'verts') {               // vertical handles, irregular Verticals mode only
+    const r = 5 * px;
+    s += `<g fill="#fff" stroke="#b4532a" stroke-width="0.75" ${NS}>`;
+    X.forEach((x, i) => [0, S.H].forEach(y => {
+      s += `<rect x="${fmt(x - r)}" y="${fmt(y - r)}" width="${fmt(2 * r)}" height="${fmt(2 * r)}" ${i === UI.selV ? 'fill="#f3d9b1"' : ''}/>`;
+    }));
+    s += '</g>';
+  }
+  if (effMode(UI.shift) === 'margin') s += marginHandles(px);
+  if (drag) s += OT.snapMark(px);
+  cv.innerHTML = s;
+  updateStatus(G);
+}
+
+function updateStatus(G) {
+  const em = effMode(UI.shift);
+  let t;
+  if (S.xs.length < 2) t = 'Need at least 2 verticals.';
+  else if (em === 'margin') t = 'MARGIN: drag an edge of the margin (the opposite edge follows; with 🔗 all four) · snaps to the grid, Alt = free · ' + marginInfo() + '.';
+  else if (em === 'measure') t = UI.mp ? 'Pick the second ' + (UI.mp.pt ? 'point.' : 'line.') : ($('mtD').checked ? 'Measure distance: click two points (snaps to corners, ends and vertices).' : 'Measure angle: click two lines.');
+  else if (em === 'grid') t = 'GRID: ' + (isVarH() ? 'drag a circle to trade height between the chains above and below · ' : '') + 'drag a line to set the angle (pivots about the top of V2; heights scale together) · drag empty space to shift the grid up/down' + (isFreeX() ? ' · hold Shift to edit verticals.' : '.');
+  else t = 'VERTICALS: drag a vertical (or a square) left/right · click a point on the top or bottom edge to add one · Delete removes the selected · hold Shift for Grid.';
+  let info = '';
+  if (G.h > 1e-6) {
+    const X = S.xs, ws = X.slice(1).map((x, k) => x - X[k]), rows = rowHs(), hs = rows.length ? rows.map(r => r.h) : [G.h];
+    const hmin = Math.min(...hs), hmax = Math.max(...hs);
+    const a0 = Math.atan(hmin / Math.max(...ws)) / DEG, a1 = Math.atan(hmax / Math.min(...ws)) / DEG;
+    info = isVarH()
+      ? `<br>reference h = ${G.h.toFixed(2)} mm · chain heights h = ${hmin.toFixed(2)}–${hmax.toFixed(2)} mm · chains that fit: ${chainsFit().toFixed(2)} · line angles ${a0.toFixed(1)}°–${a1.toFixed(1)}°`
+      : `<br>h = ${G.h.toFixed(2)} mm (vertical diagonal ${(2 * G.h).toFixed(2)} mm) · chains that fit: ${chainsFit().toFixed(2)} · ` +
+        (a1 - a0 < 0.005 ? `θ = ${a0.toFixed(2)}°` : `line angles ${a0.toFixed(1)}°–${a1.toFixed(1)}°`);
+  }
+  if (G.capped) info += '<br><span class="bad">Too many lines to draw — increase θ or the vertical spacing.</span>';
+  if (UI.note) info += `<br>${UI.note}`;
+  if (UI.ghost && (UI.cut || UI.out)) info += `<br>Grey = outside the rectangle: ${UI.cut} segment(s) leave it, ${UI.out} fall wholly outside.`;
+  $('status').innerHTML = t + info;
+}
+
+/* ---------- export ---------- */
+function buildSVG(bg) {
+  const sw = +$('sw').value || 0.2, m = sw / 2, W = S.W, H = S.H;
+  let l = '';
+  S.xs.forEach(x => { if (!edgeVert(x)) l += `<line x1="${fmt(x)}" y1="0" x2="${fmt(x)}" y2="${fmt(H)}"/>`; });
+  computeGrid().segs.forEach(g => { if (g.c) l += `<line x1="${fmt(g.c[0])}" y1="${fmt(g.c[1])}" x2="${fmt(g.c[2])}" y2="${fmt(g.c[3])}"/>`; });
+  const PW = W + 2 * S.mx, PH = H + 2 * S.my;              // the whole page at true size; its outline is not drawn
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(PW)}mm" height="${fmt(PH)}mm" viewBox="${fmt(-S.mx)} ${fmt(-S.my)} ${fmt(PW)} ${fmt(PH)}">` +
+    (bg ? `<rect x="${fmt(-S.mx)}" y="${fmt(-S.my)}" width="${fmt(PW)}" height="${fmt(PH)}" fill="#fff"/>` : '') +
+    `<rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="${$('colRect').value}" stroke-width="${sw}"/>` +
+    `<g stroke="${$('colLine').value}" stroke-width="${sw}" fill="none" stroke-linecap="round">${l}</g></svg>`;
+}
+OT.wireExport({ base: 'x-span', svg: buildSVG, size: () => [S.W + 2 * S.mx, S.H + 2 * S.my], project: () => projectDoc() });
+
+/* ---------- pointer interaction ---------- */
+function ptr(e) {
+  const pt = cv.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const q = pt.matrixTransform(cv.getScreenCTM().inverse()); return { x: q.x, y: q.y };
+}
+const pxmm = () => 1 / cv.getScreenCTM().a;
+
+function hitVerts(p) {
+  const tol = 9 * pxmm();
+  for (let i = 0; i < S.xs.length; i++)
+    if (Math.abs(p.x - S.xs[i]) < tol && (Math.abs(p.y) < tol || Math.abs(p.y - S.H) < tol)) return { type: 'vEnd', i };
+  for (let i = 0; i < S.xs.length; i++)
+    if (Math.abs(p.x - S.xs[i]) < tol * 0.7 && p.y >= 0 && p.y <= S.H) return { type: 'vBody', i };
+  return null;
+}
+function hitLine(p) {
+  const tol = 9 * pxmm() * 0.7;
+  return lastG.segs.some(g => g.c && distSeg(p, [g.c[0], g.c[1]], [g.c[2], g.c[3]]) < tol);
+}
+function touchHandles() {                                // touch vertices (rows j ≥ 0) inside the rectangle
+  const out = [];
+  touchLevels(0, S.H).forEach(e => {
+    if (e.j < 0 || e.t < -1e-6 || e.t > S.H + 1e-6) return;
+    S.xs.forEach((x, k) => { if ((k + S.ph) % 2 === 1 && x <= S.W + 1e-6) out.push({ j: e.j, x, y: e.t }); });
+  });
+  return out;
+}
+const hitTouch = p => { const tol = 9 * pxmm(); return touchHandles().find(q => Math.hypot(p.x - q.x, p.y - q.y) < tol) || null; };
+// y of vertex (touch t_j or crossing c_j) relative to yoff, with the current heights
+function relOff(type, j) {
+  let o = 0;
+  if (j >= 0) for (let i = 0; i < j; i++) o += 2 * hAt(i); else for (let i = j; i < 0; i++) o -= 2 * hAt(i);
+  return type === 'c' ? o + hAt(j) : o;
+}
+// The angle sweep pivots on the top vertex of the 2nd vertical (its first vertex inside the rectangle); that vertex stays put.
+function angleAnchor() {
+  const isT = (1 + S.ph) % 2 === 1;
+  for (const e of touchLevels(0, S.H)) {
+    const y = isT ? e.t : e.t + hAt(e.j);
+    if (y >= -1e-6) return { ax: S.xs[1], ay: y, vt: isT ? 't' : 'c', j: e.j };
+  }
+  return { ax: S.xs[1], ay: 0, vt: 't', j: 0 };
+}
+/* snapping (engine in common.js; UI.snap is set per pointer event: checkbox on and Alt not held) */
+const snapTol = () => 10 * pxmm();
+function snapX(x, skip) {                               // a vertical's x: grid lines, sheet centre, other verticals
+  if (!UI.snap) return x;
+  const pts = [[S.W / 2, 0]]; S.xs.forEach((v, j) => { if (j !== skip) pts.push([v, 0]); });
+  return OT.snapOnLine([x, 0], [0, 0], [1, 0], { tol: snapTol(), points: pts });
+}
+const snapY = y => UI.snap ? OT.snap1D(y, [...OT.gridLines(1, y), 0, S.H / 2, S.H], snapTol()) : y;
+function edgeNear(p) {
+  const tol = 14 * pxmm();
+  if (p.x < -tol || p.x > S.W + tol) return null;
+  return Math.abs(p.y) < tol || Math.abs(p.y - S.H) < tol ? true : null;
+}
+
+// measure helpers
+function snapPoint(p) {
+  const tol = 12 * pxmm(), pts = [[0, 0], [S.W, 0], [0, S.H], [S.W, S.H]];
+  S.xs.forEach(x => { if (x <= S.W + 1e-6) pts.push([x, 0], [x, S.H]); });
+  lastG.segs.forEach(g => { if (g.c) pts.push([g.c[0], g.c[1]], [g.c[2], g.c[3]]); });
+  let best = null, bd = tol;
+  pts.forEach(q => { const d = Math.hypot(q[0] - p.x, q[1] - p.y); if (d < bd) { bd = d; best = q; } });
+  return best || [p.x, p.y];
+}
+function pickLine(p) {
+  const tol = 9 * pxmm(), L = [[0, 0, S.W, 0], [S.W, 0, S.W, S.H], [S.W, S.H, 0, S.H], [0, S.H, 0, 0]];
+  S.xs.forEach(x => { if (x <= S.W + 1e-6) L.push([x, 0, x, S.H]); });
+  lastG.segs.forEach(g => { if (g.c) L.push(g.c); });
+  let best = null, bd = tol;
+  L.forEach(l => { const d = distSeg(p, [l[0], l[1]], [l[2], l[3]]); if (d < bd) { bd = d; best = l; } });
+  return best;
+}
+function measurePress(p) {
+  if ($('mtD').checked) {
+    const pt = snapPoint(p);
+    if (!UI.mp) UI.mp = { pt };
+    else { UI.meas.push({ type: 'dist', p: UI.mp.pt, q: pt }); UI.mp = null; UI.mcur = null; }
+  } else {
+    const l = pickLine(p); if (!l) return;
+    if (!UI.mp) UI.mp = { line: l };
+    else {
+      const l1 = UI.mp.line, d1 = [l1[2] - l1[0], l1[3] - l1[1]], d2 = [l[2] - l[0], l[3] - l[1]];
+      const cr = d1[0] * d2[1] - d1[1] * d2[0], dt = d1[0] * d2[0] + d1[1] * d2[1];
+      const acute = Math.atan2(Math.abs(cr), Math.abs(dt)) / DEG;
+      let at = [(l1[0] + l1[2]) / 2, (l1[1] + l1[3]) / 2];
+      if (Math.abs(cr) > 1e-9) {
+        const sc = ((l[0] - l1[0]) * d2[1] - (l[1] - l1[1]) * d2[0]) / cr;
+        at = [l1[0] + sc * d1[0], l1[1] + sc * d1[1]];
+        const b = bounds(); if (at[0] < b.x0 || at[0] > b.x1 || at[1] < b.y0 || at[1] > b.y1) at = [p.x, p.y];
+      }
+      UI.meas.push({ type: 'angle', l1, l2: l, acute, at }); UI.mp = null;
+    }
+  }
+}
+
+let drag = null;
+cv.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || S.xs.length < 2) return;
+  const p = ptr(e), em = effMode(e.shiftKey);
+  UI.shift = e.shiftKey; UI.snap = OT.snapping(e);
+  if (em === 'measure') { measurePress(p); render(); return; }
+  if (em === 'margin') {
+    const me = hitMargin(p);
+    if (me) {
+      const b = bounds();
+      UI.viewLockPage = { x0: b.x0 + S.mx, y0: b.y0 + S.my, x1: b.x1 + S.mx, y1: b.y1 + S.my };
+      drag = { type: 'margin', edge: me, snapJ: snap(), pushed: false }; UI.note = '';
+      cv.setPointerCapture(e.pointerId);
+    }
+    render(); return;
+  }
+  if (em === 'grid') {
+    UI.selV = -1;
+    const th = isVarH() ? hitTouch(p) : null, snapJ = snap();
+    if (th) { ensureRatio(th.j + 2); drag = { type: 'touch', j: th.j, start: { x: p.x, y: th.y }, r0: S.ratio.slice(), y0: S.yoff, href: gridH(), snapJ, pushed: false }; }
+    else drag = hitLine(p) && gridH() > 1e-6 ? { type: 'angle', ...angleAnchor(), snapJ, pushed: false }
+      : { type: 'grid', start: p, y0: S.yoff, snapJ, pushed: false };
+    cv.setPointerCapture(e.pointerId); syncUI(); render(); return;
+  }
+  const h = hitVerts(p);                             // Verticals mode (irregular)
+  UI.selV = h ? h.i : -1;
+  if (!h && edgeNear(p)) { const j = snap(); if (addVertical(clamp(snapX(p.x, -1), 0, S.W))) pushUndo(j); }
+  if (h) {
+    drag = { ...h, start: p, snapJ: snap(), pushed: false, x0: S.xs[h.i] };
+    UI.viewLock = bounds();
+    cv.setPointerCapture(e.pointerId);
+  }
+  syncUI(); render();
+});
+cv.addEventListener('pointermove', e => {
+  if (S.xs.length < 2) return;
+  const p = ptr(e);
+  UI.shift = e.shiftKey; UI.snap = OT.snapping(e);
+  if (UI.mp && UI.mp.pt) { UI.mcur = snapPoint(p); render(); return; }
+  if (!drag) {
+    const em = effMode(e.shiftKey);
+    const me = em === 'margin' && hitMargin(p);
+    cv.style.cursor = em === 'margin' ? (me ? (me === 'l' || me === 'r' ? 'ew-resize' : 'ns-resize') : 'default')
+      : em === 'measure' ? 'crosshair' : em === 'grid' ? (isVarH() && hitTouch(p) ? 'row-resize' : hitLine(p) ? 'crosshair' : 'ns-resize')
+      : hitVerts(p) ? 'pointer' : edgeNear(p) ? 'crosshair' : 'default';
+    return;
+  }
+  if (!drag.pushed) { pushUndo(drag.snapJ); drag.pushed = true; }
+  const d = drag;
+  if (d.type === 'margin') dragMargin(d.edge, p);
+  else if (d.type === 'angle') {                          // θ from the pointer's direction off the anchor; anchor stays a vertex
+    const a = UI.snap ? OT.snapDir([d.ax, d.ay], p, snapTol()) * DEG : Math.atan2(p.y - d.ay, p.x - d.ax);
+    S.a = 'angle'; S.theta = clamp(Math.atan2(Math.abs(Math.sin(a)), Math.abs(Math.cos(a))) / DEG, 0.5, 89.5);
+    S.yoff = normY(d.ay - relOff(d.vt, d.j));
+    UI.ang = { ax: d.ax, ay: d.ay, cur: [p.x, p.y] };
+  } else if (d.type === 'touch') {                   // move touch level j: chain above grows, chain below shrinks (the rest stay put)
+    const R = d.r0.slice(), dy = snapY(p.y) - d.start.y, k = d.href;
+    if (d.j === 0) { const h0 = R[0] * k, dd = Math.min(dy, 2 * (h0 - MINH)); R[0] = (h0 - dd / 2) / k; S.yoff = d.y0 + dd; }
+    else {
+      const hp = R[d.j - 1] * k, hj = R[d.j] * k, dd = clamp(dy, -2 * (hp - MINH), 2 * (hj - MINH));
+      R[d.j - 1] = (hp + dd / 2) / k; R[d.j] = (hj - dd / 2) / k;
+    }
+    S.ratio = R;
+  } else if (d.type === 'grid') S.yoff = normY(snapY(d.y0 + p.y - d.start.y));
+  else setX(d.i, snapX(d.x0 + p.x - d.start.x, d.i));
+  syncUI(); render();
+});
+const endDrag = () => { OT.lastSnap = null; if (drag) { drag = null; UI.viewLock = UI.viewLockPage = null; UI.ang = null; syncUI(); render(); } };
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'Shift' && !UI.shift) { UI.shift = true; render(); return; }
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.type !== 'checkbox' && document.activeElement.type !== 'radio') return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+  else if (e.key === 'Escape') { UI.mp = null; UI.selV = -1; syncUI(); render(); }
+  else if (e.key === 'Delete' || e.key === 'Backspace') delSel();
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift') { UI.shift = false; render(); } });
+
+/* ---------- controls ---------- */
+function setMode(m) {
+  if (m === 'verts' && !isFreeX()) m = 'grid';
+  UI.mode = m; UI.mp = null;
+  $('mGrid').classList.toggle('on', m === 'grid');
+  $('mVerts').classList.toggle('on', m === 'verts');
+  $('mMeas').classList.toggle('on', m === 'measure');
+  $('mMarg').classList.toggle('on', m === 'margin');
+  render();
+}
+function delSel() {
+  if (!isFreeX() || UI.selV < 0) return;
+  if (S.xs.length <= 2) { UI.note = 'At least 2 verticals are needed.'; render(); return; }
+  act(() => delVertical(UI.selV));
+}
+const on = (id, ev, fn) => { $(id)[ev] = fn; };
+
+on('kReg', 'onclick', () => setKind('regular'));
+on('kMW', 'onclick', () => setKind('movW'));
+on('kMH', 'onclick', () => setKind('movH'));
+on('kMB', 'onclick', () => setKind('both'));
+on('mGrid', 'onclick', () => setMode('grid'));
+on('mVerts', 'onclick', () => setMode('verts'));
+on('mMeas', 'onclick', () => setMode('measure'));
+on('mMarg', 'onclick', () => setMode('margin'));
+on('bDel', 'onclick', delSel);
+on('bReset', 'onclick', () => act(regen));
+on('bFit', 'onclick', () => act(() => { S.gen.start = 0; S.gen.spacing = S.W / (S.gen.n - 1); regen(); }));
+on('rV', 'onclick', () => act(randomVerts));
+on('bUndo', 'onclick', undo); on('bRedo', 'onclick', redo);
+on('mClear', 'onclick', () => { UI.meas = []; UI.mp = null; render(); });
+on('gh', 'onchange', () => { UI.ghost = $('gh').checked; render(); });
+
+on('vIn', 'onchange', () => act(() => { S.reg.v = $('vIn').value; regen(); }));
+on('rN', 'onchange', () => act(() => { S.reg.n = clamp(Math.round(+$('rN').value) || S.reg.n, 2, 400); regen(); }));
+on('rD', 'onchange', () => act(() => { S.reg.d = Math.max(0.5, +$('rD').value || S.reg.d); regen(); }));
+on('rM', 'onchange', () => act(() => { S.reg.m = Math.max(1, +$('rM').value || S.reg.m); regen(); }));
+on('aIn', 'onchange', () => act(() => {               // keep the picture unchanged when switching what defines it
+  const h = gridH(), d = S.xs[1] - S.xs[0];
+  S.a = $('aIn').value;
+  if (S.a === 'angle') S.theta = clamp(Math.atan(h / d) / DEG, 0.5, 89.5); else S.nCh = clamp(half(S.H / (2 * h)) || 1, 0.5, 200);
+}));
+on('th', 'onchange', () => act(() => { S.theta = clamp(+$('th').value || S.theta, 0.5, 89.5); }));
+on('nCh', 'onchange', () => act(() => { S.nCh = clamp(half(+$('nCh').value) || S.nCh, 0.5, 200); }));
+on('yo', 'onchange', () => act(() => { S.yoff = normY(+$('yo').value || 0); }));
+on('bYo', 'onclick', () => act(() => { S.yoff = 0; }));
+on('ph', 'onchange', () => act(() => { S.ph = +$('ph').value; }));
+
+// variable heights: sliders, profile, randomize, fit
+const setRowH = (j, h) => { ensureRatio(j + 2); S.ratio[j] = clamp(h, MINH, 1e4) / gridH(); UI.note = ''; syncUI(); render(); };
+function makeRow(j) {
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = '<b></b><input type="range" min="0.3" step="0.1"><input type="number" min="0.3" step="0.5"> mm';
+  const sl = row.querySelector('input[type=range]'), nm = row.querySelector('input[type=number]');
+  sl.oninput = () => { if (!sl._u) { pushUndo(); sl._u = true; } setRowH(j, +sl.value); };
+  sl.onchange = () => { sl._u = false; };
+  nm.onchange = () => { pushUndo(); setRowH(j, +nm.value || MINH); };
+  return row;
+}
+function syncRows() {
+  const box = $('hRows'), rows = isVarH() ? rowHs() : [];
+  while (box.children.length > rows.length) box.lastChild.remove();
+  while (box.children.length < rows.length) box.appendChild(makeRow(box.children.length));
+  rows.forEach((r, i) => {
+    const row = box.children[i], sl = row.querySelector('input[type=range]'), nm = row.querySelector('input[type=number]');
+    row.querySelector('b').textContent = 'Chain ' + (r.j + 1);
+    sl.max = Math.max(S.H, 2 * r.h);
+    if (document.activeElement !== sl) sl.value = r.h;
+    if (document.activeElement !== nm) nm.value = +r.h.toFixed(2);
+  });
+}
+const EASE = { linear: u => u, in: u => u * u, out: u => 1 - (1 - u) * (1 - u), inout: u => u * u * (3 - 2 * u) };
+on('gh0', 'onchange', () => { S.prof.h0 = Math.max(MINH, +$('gh0').value || S.prof.h0); syncUI(); });
+on('gh1', 'onchange', () => { S.prof.h1 = Math.max(MINH, +$('gh1').value || S.prof.h1); syncUI(); });
+on('gcv', 'onchange', () => { S.prof.curve = $('gcv').value; });
+on('bProf', 'onclick', () => act(() => {
+  const R = Math.max(2, rowHs().length), P = S.prof, k = gridH();
+  S.ratio = Array.from({ length: R }, (_, i) => Math.max(MINH, P.h0 + (P.h1 - P.h0) * EASE[P.curve](i / (R - 1))) / k);
+}));
+on('bHRand', 'onclick', () => act(() => { const R = Math.max(2, rowHs().length); S.ratio = Array.from({ length: R }, () => 0.5 + Math.random()); }));
+on('bHReset', 'onclick', () => act(() => { S.ratio = [1]; }));
+on('bHFit', 'onclick', () => act(() => {               // scale so the chains now shown (to the nearest half) end exactly at the bottom edge
+  const R = Math.max(0.5, half(chainsFit())), whole = Math.floor(R), k = gridH();
+  ensureRatio(whole + 2);
+  let sum = 0;
+  for (let i = 0; i < whole; i++) sum += 2 * hAt(i);
+  sum += (R - whole) * 2 * hAt(whole);
+  if (sum > 1e-6 && S.H - S.yoff > 0) { const f = (S.H - S.yoff) / sum; S.ratio = S.ratio.map(r => Math.max(MINH / k, r * f)); }
+}));
+
+const genField = (id, key, min, max, round) => on(id, 'onchange', () => act(() => {
+  let v = +$(id).value; if (!isFinite(v)) return;
+  S.gen[key] = clamp(round ? Math.round(v) : v, min, max); regen();
+}));
+genField('gN', 'n', 2, 40, true); genField('gSp', 'spacing', 1, 1e4); genField('gSt', 'start', 0, 1e4);
+function resize(nw, nh) {                               // new area inside the margin; free verticals scale with it
+  const fx = nw / S.W;
+  if (isFreeX()) { S.xs = S.xs.map(x => x * fx); S.gen.start *= fx; S.gen.spacing *= fx; }
+  S.W = nw; S.H = nh;
+  if (!isFreeX() || S.layout === 'gen') regen(); else sanitize();
+}
+['W', 'H'].forEach(id => on(id, 'onchange', () => act(() => {
+  resize(Math.max(10, (+$('W').value || S.W + 2 * S.mx) - 2 * S.mx), Math.max(10, (+$('H').value || S.H + 2 * S.my) - 2 * S.my));
+})));
+on('vx', 'onchange', () => { if (UI.selV >= 0) act(() => setX(UI.selV, +$('vx').value)); });
+const nudge = sign => { if (UI.selV >= 0) act(() => setX(UI.selV, S.xs[UI.selV] + sign * (+$('step').value || 1))); };
+on('nudL', 'onclick', () => nudge(-1)); on('nudR', 'onclick', () => nudge(1));
+['colLine', 'colRect'].forEach(id => on(id, 'oninput', render));
+Object.keys(UI.dim).forEach(k => {
+  const id = 'd' + k[0].toUpperCase() + k.slice(1);
+  on(id, 'onchange', () => { UI.dim[k] = $(id).checked; render(); });
+});
+document.querySelectorAll('input[name=mt]').forEach(r => r.onchange = () => { UI.mp = null; render(); });
+
+/* ---------- margins (two, each symmetric; see common.js) ---------- */
+// the page keeps its size; the area inside the margins changes and the pattern rescales with it
+function setMargins(mx, my, lock) { const dx = 2 * (S.mx - mx), dy = 2 * (S.my - my); S.mx = mx; S.my = my; S.mLock = lock; resize(S.W + dx, S.H + dy); }
+// Margin mode: which margin edge (l r t b) is under p
+function hitMargin(p) {
+  const tol = 9 * pxmm(), inX = p.x > -tol && p.x < S.W + tol, inY = p.y > -tol && p.y < S.H + tol;
+  if (inY && Math.abs(p.x) < tol) return 'l';
+  if (inY && Math.abs(p.x - S.W) < tol) return 'r';
+  if (inX && Math.abs(p.y) < tol) return 't';
+  if (inX && Math.abs(p.y - S.H) < tol) return 'b';
+  return null;
+}
+// drag edge e to p: its distance from the page edge becomes that margin, snapped to the grid, kept in 5–15 mm
+function dragMargin(e, p) {
+  const horiz = e === 'l' || e === 'r', PW = S.W + 2 * S.mx, PH = S.H + 2 * S.my;
+  let d = e === 'l' ? p.x + S.mx : e === 'r' ? S.W + S.mx - p.x : e === 't' ? p.y + S.my : S.H + S.my - p.y;
+  d = UI.snap ? OT.snapMargin(horiz ? PW : PH, d, snapTol()) : Math.round(d * 10) / 10;
+  d = clamp(d, 5, 15);
+  if (S.mLock) setMargins(d, d, true); else setMargins(horiz ? d : S.mx, horiz ? S.my : d, false);
+}
+const marginInfo = () => OT.marginInfo(S.W + 2 * S.mx, S.H + 2 * S.my, S.mx, S.my);
+const marginHandles = px => {                            // Margin mode: a bar on each edge
+  const r = 5 * px, H2 = S.H / 2, W2 = S.W / 2;
+  return `<g fill="#fff" stroke="#b4532a" stroke-width="0.75" vector-effect="non-scaling-stroke">` +
+    [[0, H2, r, 3 * r], [S.W, H2, r, 3 * r], [W2, 0, 3 * r, r], [W2, S.H, 3 * r, r]].map(([x, y, w, h]) => `<rect x="${fmt(x - w)}" y="${fmt(y - h)}" width="${fmt(2 * w)}" height="${fmt(2 * h)}"/>`).join('') + '</g>';
+};
+const syncMargins = OT.wireMargins({
+  get: () => [S.mx, S.my, S.mLock], set: (mx, my, lock) => act(() => setMargins(mx, my, lock)),
+  page: () => [S.W + 2 * S.mx, S.H + 2 * S.my], polar: POLAR, note: m => { UI.note = m; render(); },
+});
+const syncSheet = OT.wireSheet({ get: () => [S.W + 2 * S.mx, S.H + 2 * S.my], set: (w, h) => { $('W').value = w; $('H').value = h; $('W').onchange(); } });
+function syncUI() {
+  const set = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = typeof v === 'number' ? +v.toFixed(2) : v; };
+  const free = isFreeX(), reg = !free, X = S.xs, h = gridH(), d = X.length > 1 ? X[1] - X[0] : 0;
+  set('W', S.W + 2 * S.mx); set('H', S.H + 2 * S.my); syncMargins(); syncSheet();
+  [['kReg', 'regular'], ['kMW', 'movW'], ['kMH', 'movH'], ['kMB', 'both']].forEach(([id, k]) => $(id).classList.toggle('on', S.kind === k));
+  $('mGrid').dataset.tip = 'Drag a line to set the angle (sweep the pointer around the top of V2); drag empty space to shift the grid up/down (or type the y offset).' + (free ? ' Hold Shift to move verticals.' : '');
+  $('mVerts').dataset.tip = 'Drag a vertical (or a square end handle) left/right. To add one, click a point on the top or bottom edge. Delete removes the selected vertical. Hold Shift for Grid.';
+  $('panReg').hidden = free; $('panIrr').hidden = !free; $('mVerts').hidden = !free; $('panH').hidden = !isVarH();
+  set('gh0', S.prof.h0); set('gh1', S.prof.h1); $('gcv').value = S.prof.curve; syncRows();
+  if (reg && UI.mode === 'verts') setMode('grid');
+  // regular verticals: only the driver is editable, the others show the derived value
+  const vd = regularD(), R = S.reg;
+  $('vIn').value = R.v;
+  set('rN', reg ? X.length : R.n); set('rD', reg ? vd : R.d); set('rM', reg ? 2 * vd : R.m);
+  $('rN').disabled = R.v !== 'count'; $('rD').disabled = R.v !== 'dist'; $('rM').disabled = R.v !== 'minor';
+  set('gN', S.gen.n); set('gSp', S.gen.spacing); set('gSt', S.gen.start);
+  // rhombus: only the driver is editable
+  $('aIn').value = S.a;
+  set('th', S.a === 'angle' ? S.theta : (d > 0 ? Math.atan(h / d) / DEG : 0)); set('nCh', S.a === 'chains' ? S.nCh : (h > 0 ? S.H / (2 * h) : 0));
+  $('th').disabled = S.a !== 'angle'; $('nCh').disabled = S.a !== 'chains';
+  $('derived').textContent = h > 0 ? (isVarH() ? `reference h = ${h.toFixed(2)} mm (each chain row scales it)` : `h = ${h.toFixed(2)} mm · vertical diagonal 2h = ${(2 * h).toFixed(2)} mm`) + (d > 0 ? ` · first section ${d.toFixed(2)} mm` : '') : '';
+  set('yo', S.yoff); $('ph').value = String(S.ph);
+  const sv = UI.selV >= 0 ? X[UI.selV] : undefined;
+  $('selV').hidden = sv === undefined;
+  if (sv !== undefined) { $('selVn').textContent = UI.selV + 1; set('vx', sv); }
+}
+
+/* ---------- init ---------- */
+regen();
+syncUI(); setMode('grid');
+OT.wireGrid(render);
+OT.wireZoom({ svg: cv, get: bounds, set: b => { UI.view = b; }, fit: () => { UI.view = null; }, render, pan: true });
+// Project files: the model S. Missing fields fall back to the start-up defaults; a load is one undo step.
+const S0 = snap();
+const projectDoc = OT.wireProject({
+  tool: 'x-span', version: 1, templates: 'templates/index.txt',
+  get: () => JSON.parse(snap()),
+  set: st => act(() => {
+    if (st.m !== undefined) { st.mx = st.my = st.m; delete st.m; }   // files from before there were two margins
+    Object.assign(S, JSON.parse(S0), st); UI.selV = -1; UI.mp = null; UI.meas = []; UI.view = null; }),
+});
+new ResizeObserver(render).observe(cv);
+</script>
+</body>
+</html>
