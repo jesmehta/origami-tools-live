@@ -20,4 +20,4 @@ README:
 The top-level [README](../README.md) is the index of tools, and
 [CHANGELOG.md](../CHANGELOG.md) has the history.
 
-All documentation is CC BY 4.0; see [LICENSE-docs.md](../LICENSE-docs.md).
+All documentation is CC BY 4.0; see [LICENSE-docs](../LICENSE-docs).

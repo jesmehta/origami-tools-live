@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1: documentation licence file renamed (2026-10-28)
+
+`LICENSE-docs.md` is now `LICENSE-docs` (no extension), like `LICENSE`, so
+static hosts that never serve `.md` files still serve it. The links in
+`index.html`, `README.md` and `docs/README.md` point to the new name. The
+licence text is unchanged.
+
 ## 1.0.0: public repository (2026-10-24)
 
 Migrated the open-source tools from the development repository to

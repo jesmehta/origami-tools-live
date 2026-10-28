@@ -69,7 +69,7 @@ decisions behind it all: [docs/](docs/README.md).
 | What | Licence |
 |---|---|
 | Code (all `.html`, `.js`, `.css`) | GPL-3.0-or-later: [LICENSE](LICENSE) |
-| Documentation (`.md`) and the author's own images (`assets/`) | CC BY 4.0: [LICENSE-docs.md](LICENSE-docs.md) |
+| Documentation (`.md`) and the author's own images (`assets/`) | CC BY 4.0: [LICENSE-docs](LICENSE-docs) |
 | Project templates (`*/templates/`) | CC BY 4.0, as documentation |
 | [JSZip](https://stuk.github.io/jszip/) | Not bundled. Loaded at runtime from cdnjs for ZIP export, under its own licence (MIT or GPLv3) |
 | [opentype.js](https://opentype.js.org/) | Not bundled, and not used by these tools. `common.js` has an optional helper (`OT.opentypejs`) that would load it from cdnjs if a page called it (MIT) |
