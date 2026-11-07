@@ -164,7 +164,7 @@ OT.wireExport = opts => {
 
 /* ---------- sheet size presets ---------- */
 // Fallback when page-sizes.txt can't be read (e.g. opened from file://). Keep in step with that file.
-OT.PAGE_DEFAULTS = [['A4', 297, 210], ['A3', 420, 297], ['370 × 270', 370, 270], ['270 square', 270, 270], ['550 × 760', 550, 760], ['550 square', 550, 550]];
+OT.PAGE_DEFAULTS = [['A4', 297, 210], ['A3', 420, 297], ['370 × 270', 370, 270], ['270 square', 270, 270], ['550 × 760', 550, 760], ['550 square', 550, 550], ['560 × 910', 560, 910]];
 OT.pageSizes = (function () {
   const here = document.currentScript && document.currentScript.src;
   return (async () => {

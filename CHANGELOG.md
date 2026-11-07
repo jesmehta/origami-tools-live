@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2: 560 × 910 sheet preset (2026-11-07)
+
+The sheet size list in every tool now includes 560 × 910 mm.
+
 ## 1.0.1: documentation licence file renamed (2026-10-28)
 
 `LICENSE-docs.md` is now `LICENSE-docs` (no extension), like `LICENSE`, so
