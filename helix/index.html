@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Helix Generator</title>
+<link rel="stylesheet" href="../common/common.css">
+<script src="../common/common.js"></script>
+<style>
+:root{--bg:#eef0dc;--panel:#fbf9ec;--ink:#243322;--mute:#6b7556;--line:#cdd5b4;--acc:#b4532a;}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{font:13px/1.4 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+#app{display:grid;grid-template-columns:340px 1fr;height:100%}
+aside{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:12px 14px 30px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#cv{flex:1;min-height:0;width:100%;background:#d9e2c4;touch-action:none;display:block}
+#status{padding:6px 12px;border-top:1px solid var(--line);background:var(--panel);color:var(--mute);min-height:44px}
+#status .bad{color:#a8401c;font-weight:600}
+h1{font-size:15px;margin:0 0 10px}
+fieldset{border:1px solid var(--line);border-radius:6px;margin:0 0 10px;padding:8px 10px 10px}
+legend{font-weight:600;padding:0 4px}
+.row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:5px 0}
+label{display:inline-flex;align-items:center;gap:5px}
+input[type=number]{width:64px;padding:3px 4px}
+input[type=color]{width:30px;height:22px;padding:0;border:1px solid var(--line)}
+button{font:inherit;padding:4px 9px;border:1px solid #b9c29c;border-radius:4px;background:#f7f3dc;cursor:pointer}
+button:hover{background:#efe6bd}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.note{color:var(--mute);font-size:12px;margin:4px 0 0}
+@media(max-width:780px){#app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}aside{max-height:48vh}main{height:70vh}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside>
+  <a class="ot-back" href="../index.html">Origami tools</a>
+  <h1>Helix Generator</h1>
+  <div id="projSlot"></div>
+
+  <fieldset><legend>Sheet</legend>
+    <div class="row">
+      <label>Size <select id="pgSel"></select></label>
+      <button id="pgSwap" data-tip="Swap portrait / landscape">⇄</button>
+    </div>
+    <div class="row">
+      <label>W <input type="number" id="W" min="10" step="1"> mm</label>
+      <label>H <input type="number" id="H" min="10" step="1"> mm</label>
+    </div>
+    <div id="margSlot"></div>
+  </fieldset>
+  <div id="gridSlot"></div>
+
+  <fieldset><legend data-tip="A strip of n × k cells, each w wide and d high, with a top-left → bottom-right diagonal in every cell. Rolled up, the n columns make the faces of an n-sided tube and the diagonals run round it as helices. Drawn as long straight lines: n + 1 verticals of height k·d at spacing w, the diagonals that line up across cells as single lines, and the step lines between the rows.">Helix</legend>
+    <div class="row">
+      <label data-tip="Sides of the polygon: the number of columns round the tube.">n <input type="number" id="n" min="3" max="60" step="1"> sides</label>
+      <label data-tip="Side width: each column's width, the polygon's side length.">w <input type="number" id="w" min="1" step="0.5"> mm</label>
+    </div>
+    <div class="row">
+      <label data-tip="Distance: the height of one step (one row of cells).">d <input type="number" id="d" min="1" step="0.5"> mm</label>
+      <label data-tip="Number of steps: rows of cells stacked up the strip.">k <input type="number" id="k" min="1" max="300" step="1"> steps</label>
+    </div>
+    <p class="note" id="derived"></p>
+  </fieldset>
+
+  <fieldset><legend data-tip="A strip m mm wide added past the last vertical. It repeats the first m mm of the pattern, so when it is glued under the first column its fold lines land on the left edge's fold lines. 0 = no flap.">Glue flap</legend>
+    <div class="row">
+      <label>m <input type="number" id="m" min="0" step="0.5"> mm</label>
+    </div>
+  </fieldset>
+  <div id="viewSlot"></div>
+
+  <fieldset><legend>Export</legend>
+    <div class="row">
+      <label>Cut <input type="color" id="colCut" value="#000000"></label>
+      <label>Fold <input type="color" id="colFold" value="#2e8b57"></label>
+    </div>
+    <div class="row">
+      <label>Stroke <input type="number" id="sw" value="0.2" min="0.05" step="0.05"> mm</label>
+      <label>PNG <input type="number" id="ppm" value="6" min="1" max="30" step="1"> px/mm</label>
+    </div>
+    <div class="row">
+      <button id="xSvg" class="pri">Export SVG</button>
+      <button id="xPng" class="pri">Export PNG</button>
+      <button id="xZip" class="pri" data-tip="SVG + PNG together in one .zip (same time-stamped name).">Export ZIP</button>
+    </div>
+  </fieldset>
+
+  <div class="row"><button id="bUndo">Undo</button><button id="bRedo">Redo</button></div>
+</aside>
+<main>
+  <svg id="cv" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="status"></div>
+</main>
+</div>
+
+<script>
+'use strict';
+/* Helix generator — an n × k strip of w × d cells with a TL→BR diagonal in each, plus a glue flap that repeats
+   the strip's first m mm. Rolled into an n-sided tube, the diagonals become helices. */
+const EPS = 1e-6;
+const fmt = n => +n.toFixed(4);
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const int = (v, a, b, def) => { const x = Math.round(+v); return Number.isFinite(x) ? clamp(x, a, b) : def; };
+const $ = id => document.getElementById(id);
+const cv = $('cv');
+$('gridSlot').outerHTML = OT.gridFieldset(false);
+$('projSlot').outerHTML = OT.projectFieldset();
+$('margSlot').outerHTML = OT.marginRow();
+$('viewSlot').outerHTML = OT.zoomFieldset();
+
+/* ---------- state ---------- */
+const S = {
+  W: 420, H: 297,                         // the sheet (page coordinates, origin at its top-left); A3, as the default strip outgrows A4
+  mx: 10, my: 10, mLock: true,            // sheet margins (5–15 mm): the area the strip must fit in
+  n: 3,                                   // polygon sides = columns
+  w: 80,                                  // side width = column width, mm
+  d: 10,                                  // step height, mm
+  k: 20,                                  // steps = rows
+  m: 10,                                  // glue flap width, mm (0 = none)
+};
+const UI = { view: { cx: 0, cy: 0, w: 180 }, note: '' };
+
+/* ---------- undo ---------- */
+const undoS = [], redoS = [];
+const snap = () => JSON.stringify(S);
+function restore(j) { Object.assign(S, JSON.parse(j)); syncUI(); fitView(); render(); }
+function pushUndo(j) { undoS.push(j || snap()); if (undoS.length > 80) undoS.shift(); redoS.length = 0; }
+function act(fn) {                       // a change that leaves S as it was (e.g. a re-fired `change`) adds no undo step
+  const j = snap(); UI.note = ''; fn();
+  if (snap() !== j) pushUndo(j);
+  syncUI(); render();
+}
+function undo() { if (!undoS.length) return; redoS.push(snap()); restore(undoS.pop()); }
+function redo() { if (!redoS.length) return; undoS.push(snap()); restore(redoS.pop()); }
+
+/* ---------- geometry ---------- */
+// Liang–Barsky crop of a segment to the box [0, L] × [0, Hs]
+function clip(x1, y1, x2, y2, L, Hs) {
+  let t0 = 0, t1 = 1; const dx = x2 - x1, dy = y2 - y1;
+  const ps = [-dx, dx, -dy, dy], qs = [x1, L - x1, y1, Hs - y1];
+  for (let i = 0; i < 4; i++) {
+    if (Math.abs(ps[i]) < 1e-12) { if (qs[i] < 0) return null; continue; }
+    const r = qs[i] / ps[i];
+    if (ps[i] < 0) { if (r > t1) return null; if (r > t0) t0 = r; }
+    else { if (r < t0) return null; if (r < t1) t1 = r; }
+  }
+  if ((t1 - t0) * Math.hypot(dx, dy) < EPS) return null;
+  return [[x1 + t0 * dx, y1 + t0 * dy], [x1 + t1 * dx, y1 + t1 * dy]];
+}
+
+// Strip coordinates: u along the strip (0 = left edge), v down it (0 = top edge). Body = [0, n·w], flap = [n·w, n·w + m].
+// The pattern is periodic in u with period w, so extending every family past n·w IS the copy of its first m mm.
+function strip() {
+  const { n, w, d, k } = S, body = n * w, m = clamp(S.m, 0, body), L = body + m, Hs = k * d;
+  const vert = [], horiz = [], diag = [];
+  for (let i = 1; i * w < L - EPS; i++) vert.push([[i * w, 0], [i * w, Hs]]);      // u = 0 is the cut edge
+  for (let j = 1; j < k; j++) horiz.push([[0, j * d], [L, j * d]]);
+  // diagonals u = w·(c + v/d): from (c·w, 0) to ((c + k)·w, Hs), one line each, cropped to the strip
+  for (let c = -k; c * w < L + EPS; c++) { const s = clip(c * w, 0, (c + k) * w, Hs, L, Hs); if (s) diag.push(s); }
+  return { body, m, L, Hs, vert, horiz, diag };
+}
+
+// Placement on the sheet: centred, the strip running along x.
+function compute() {
+  const T = strip(), pw = T.L, ph = T.Hs;
+  const ox = (S.W - pw) / 2, oy = (S.H - ph) / 2;
+  const P = ([u, v]) => [ox + u, oy + v];
+  const map = segs => segs.map(([a, b]) => [P(a), P(b)]);
+  const box = (u0, u1) => { const a = P([u0, 0]), b = P([u1, T.Hs]); return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])]; };
+  return {
+    ...T, pw, ph, ox, oy,
+    vert: map(T.vert), horiz: map(T.horiz), diag: map(T.diag),
+    rect: box(0, T.L), flap: T.m > EPS ? box(T.body, T.L) : null,
+    fits: ox >= S.mx - EPS && oy >= S.my - EPS,
+  };
+}
+
+/* ---------- view ---------- */
+function fitView() {
+  const r = cv.getBoundingClientRect(), asp = (r.width || 1) / (r.height || 1);
+  UI.view = { cx: S.W / 2, cy: S.H / 2, w: Math.max(S.W * 1.15, S.H * 1.15 * asp, 20) };
+}
+
+/* ---------- render ---------- */
+const ln = (a, b) => `<line x1="${fmt(a[0])}" y1="${fmt(a[1])}" x2="${fmt(b[0])}" y2="${fmt(b[1])}"/>`;
+const rectEl = ([x0, y0, x1, y1], extra = '') => `<rect x="${fmt(x0)}" y="${fmt(y0)}" width="${fmt(x1 - x0)}" height="${fmt(y1 - y0)}" ${extra}/>`;
+const lines = segs => segs.map(l => ln(l[0], l[1])).join('');
+const folds = M => [['verticals', M.vert], ['steps', M.horiz], ['diagonals', M.diag]];
+
+function render() {
+  const M = compute(), v = UI.view, r = cv.getBoundingClientRect();
+  const h = v.w * (r.height || 1) / (r.width || 1);
+  cv.setAttribute('viewBox', `${v.cx - v.w / 2} ${v.cy - h / 2} ${v.w} ${h}`);
+  const NS = 'vector-effect="non-scaling-stroke"';
+  let s = `<rect x="0" y="0" width="${S.W}" height="${S.H}" fill="#fffdf3" stroke="#a9b38c" stroke-width="0.5" ${NS}/>`;
+  s += OT.gridSVG([0, 0, S.W, S.H], [S.W / 2, S.H / 2], false);
+  if (M.flap) s += rectEl(M.flap, 'fill="#f3d9b1" opacity=".55"');          // glue flap, shaded on screen only
+  s += `<g stroke="#a3a88f" stroke-width="0.5" stroke-dasharray="4 3" fill="none" ${NS}>${rectEl([S.mx, S.my, S.W - S.mx, S.H - S.my])}</g>`;
+  s += `<g stroke="${$('colFold').value}" stroke-width="0.55" fill="none" stroke-linecap="round" ${NS}>${folds(M).map(f => lines(f[1])).join('')}</g>`;
+  s += `<g stroke="${M.fits ? $('colCut').value : '#c0392b'}" stroke-width="0.8" fill="none" ${NS}>${rectEl(M.rect)}</g>`;
+  cv.innerHTML = s;
+  updateStatus(M);
+}
+
+function updateStatus(M) {
+  const { n, w, d, k } = S, R = w / (2 * Math.sin(Math.PI / n)), ri = w / (2 * Math.tan(Math.PI / n));
+  const th = Math.atan2(d, w) * 180 / Math.PI, cnt = M.vert.length + M.horiz.length + M.diag.length;
+  $('derived').textContent = `Tube: ${n}-gon, side ${fmt(w)} mm, circumradius ${R.toFixed(2)} mm, inradius ${ri.toFixed(2)} mm, height ${fmt(M.Hs)} mm. ` +
+    `Diagonal ${th.toFixed(2)}° to the horizontal, ${Math.hypot(w, d).toFixed(2)} mm per cell; one turn of the tube climbs ${fmt(n * d)} mm.`;
+  let t = `Strip ${fmt(M.L)} × ${fmt(M.Hs)} mm (body ${fmt(M.body)} + flap ${fmt(M.m)}) · ${n} × ${k} cells · ` +
+    `${M.vert.length} verticals, ${M.horiz.length} step lines, ${M.diag.length} diagonals (${cnt} folds) · wheel zooms, drag pans.`;
+  t += M.fits
+    ? `<br>Centred on the sheet: margins L/R ${fmt(M.ox)} mm · T/B ${fmt(M.oy)} mm.`
+    : `<br><span class="bad">The strip (${fmt(M.pw)} × ${fmt(M.ph)} mm) does not fit inside the margins (${fmt(S.W - 2 * S.mx)} × ${fmt(S.H - 2 * S.my)} mm)` +
+      ` — change the sheet size or orientation.</span>`;
+  if (S.m > M.body + EPS) t += `<br><span class="bad">Glue flap capped at the body length (${fmt(M.body)} mm).</span>`;
+  if (UI.note) t += `<br><span class="bad">${UI.note}</span>`;
+  $('status').innerHTML = t;
+}
+
+/* ---------- sidebar sync ---------- */
+function syncUI() {
+  $('W').value = S.W; $('H').value = S.H; syncMargins(); syncSheet();
+  ['n', 'w', 'd', 'k', 'm'].forEach(id => { if (document.activeElement !== $(id)) $(id).value = S[id]; });
+}
+
+$('n').onchange = () => act(() => { S.n = int($('n').value, 3, 60, S.n); });
+$('k').onchange = () => act(() => { S.k = int($('k').value, 1, 300, S.k); });
+['w', 'd'].forEach(id => $(id).onchange = () => act(() => { const x = +$(id).value; if (x >= 1) S[id] = x; }));
+$('m').onchange = () => act(() => { const x = +$('m').value; if (x >= 0) S.m = x; });
+['W', 'H'].forEach(id => $(id).onchange = () => act(() => {
+  S.W = Math.max(10, +$('W').value || S.W); S.H = Math.max(10, +$('H').value || S.H); fitView();
+}));
+const syncMargins = OT.wireMargins({
+  get: () => [S.mx, S.my, S.mLock], set: (mx, my, lock) => act(() => { S.mx = mx; S.my = my; S.mLock = lock; }),
+  page: () => [S.W, S.H], polar: false, note: m => { UI.note = m; render(); },
+});
+const syncSheet = OT.wireSheet({ get: () => [S.W, S.H], set: (w, h) => { $('W').value = w; $('H').value = h; $('W').onchange(); } });
+['colCut', 'colFold'].forEach(id => $(id).oninput = render);
+$('bUndo').onclick = undo; $('bRedo').onclick = redo;
+addEventListener('keydown', e => {
+  if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) && !/^(checkbox|radio)$/.test(document.activeElement.type)) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+});
+addEventListener('resize', render);
+
+/* ---------- export ---------- */
+function buildSVG(bg) {
+  const M = compute(), sw = +$('sw').value || 0.2, w = S.W, h = S.H, fc = $('colFold').value;   // the whole sheet, true size
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(w)}mm" height="${fmt(h)}mm" viewBox="0 0 ${fmt(w)} ${fmt(h)}">` +
+    (bg ? `<rect x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" fill="#fff"/>` : '') +
+    `<g id="fold" stroke="${fc}" stroke-width="${sw}" fill="none" stroke-linecap="round">` +
+    folds(M).filter(f => f[1].length).map(([id, segs]) => `<g id="${id}">${lines(segs)}</g>`).join('') + '</g>' +
+    `<g id="cut" stroke="${$('colCut').value}" stroke-width="${sw}" fill="none">${rectEl(M.rect)}</g></svg>`;
+}
+const tag = () => `n${S.n}_w${fmt(S.w)}_d${fmt(S.d)}_k${S.k}_m${fmt(S.m)}`;
+OT.wireExport({ get base() { return `helix_${tag()}`; }, svg: buildSVG, size: () => [S.W, S.H], project: () => projectDoc() });
+
+/* ---------- pan / zoom (no shape dragging — the pattern is fully parametric) ---------- */
+OT.wireZoom({
+  svg: cv, pan: true,
+  get: () => { const r = cv.getBoundingClientRect(), v = UI.view, h = v.w * (r.height || 1) / (r.width || 1);
+    return { x0: v.cx - v.w / 2, y0: v.cy - h / 2, x1: v.cx + v.w / 2, y1: v.cy + h / 2 }; },
+  set: b => { UI.view = { cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, w: b.x1 - b.x0 }; },
+  fit: fitView, render,
+});
+
+/* ---------- init ---------- */
+OT.wireGrid(render);
+syncUI(); fitView(); render();
+// Project files: the model S. Missing fields fall back to the start-up defaults; a load is one undo step.
+const S0 = snap();
+const projectDoc = OT.wireProject({
+  tool: 'helix', version: 1,
+  get: () => JSON.parse(snap()),
+  set: st => act(() => { Object.assign(S, JSON.parse(S0), st); fitView(); }),
+});
+</script>
+</body>
+</html>
