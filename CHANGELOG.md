@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased: Helix Generator (2026-11-14)
+
+New tool, `helix/`. It draws a strip of `n` columns `w` wide by `k` steps `d`
+high, with a top-left → bottom-right diagonal in every cell, as long lines:
+the verticals, step lines, and diagonals joined across cells. A glue
+flap `m` mm wide repeats the first `m` mm of the strip, so its folds match the
+left edge. The strip is centred on the sheet. It has
+its own card on the landing page.
+
 ## 1.0.2: 560 × 910 sheet preset (2026-11-07)
 
 The sheet size list in every tool now includes 560 × 910 mm.

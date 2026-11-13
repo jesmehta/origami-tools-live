@@ -38,6 +38,14 @@ tools use built-in defaults instead.
   ending on a step. The cut outline fits whole gaps (no partial steps at the
   edges). Fully parametric. SVG/PNG export. See [wave/README.md](wave/README.md).
 
+- **[Helix Generator](helix/index.html)**: a strip of `n` columns (`w` wide)
+  by `k` steps (`d` high), with a top-left → bottom-right diagonal in every
+  cell, drawn as long lines (verticals, step lines, and diagonals
+  joined across cells). A glue flap `m` mm wide repeats the strip's first
+  `m` mm, so its folds match the left edge. It rolls into an `n`-sided tube
+  with helical diagonals. Fully parametric. SVG/PNG export. See
+  [helix/README.md](helix/README.md).
+
 ## Shared features
 
 Every tool loads `common/common.js` + `common/common.css` (a plain script

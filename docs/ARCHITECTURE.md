@@ -16,6 +16,7 @@ origami-tools-live/
   x-span/index.html          single file (HTML + CSS + script)
   hypar/index.html           single file
   wave/index.html            single file; no dragging, fully parametric (s, j, edge bend, anchor)
+  helix/index.html           single file; no dragging, fully parametric (n, w, d, k, flap m)
   docs/                      this folder
 ```
 
@@ -97,6 +98,12 @@ the only place that switches representation.
   left, y from the bottom), so both directions share the same sequence and
   the cut outline (`M.rect`) fits the pattern exactly.
   See [wave README](../wave/README.md).
+- helix (Helix Generator): `S.n, S.w, S.d, S.k, S.m` plus the
+  sheet/margins. `strip()` builds the three line families in strip
+  coordinates (u along, v down). The pattern repeats every `w`, so the glue
+  flap is just every family continued past `n·w`. `compute()` centres the
+  strip on the page. The cut is the strip
+  outline. See [helix README](../helix/README.md).
 
 ## Export
 

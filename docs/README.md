@@ -15,7 +15,8 @@ README:
 [mirror-pleats](../mirror-pleats/README.md) ·
 [x-span](../x-span/README.md) ·
 [hypar](../hypar/README.md) ·
-[wave](../wave/README.md).
+[wave](../wave/README.md) ·
+[helix](../helix/README.md).
 
 The top-level [README](../README.md) is the index of tools, and
 [CHANGELOG.md](../CHANGELOG.md) has the history.
